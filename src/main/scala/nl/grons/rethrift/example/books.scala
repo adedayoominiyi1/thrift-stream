@@ -11,7 +11,7 @@ import nl.grons.rethrift._
 // struct Book {
 //   1: string title,
 //   2: Author author,
-//   4: int16 year,
+//   4: int32 year,
 // }
 
 // --------------- Author ---------------
@@ -106,13 +106,13 @@ class BookStructBuilder extends StructBuilder[IBook] {
   def stopStruct(): IBook = builder
   def readBoolean(fieldId: Short, value: Boolean): Unit = {}
   def readInt8(fieldId: Short, value: Byte): Unit = {}
-  def readInt16(fieldId: Short, value: Short): Unit = {
+  def readInt16(fieldId: Short, value: Short): Unit = {}
+  def readInt32(fieldId: Short, value: Int): Unit = {
     fieldId match {
       case 4 => builder.withYear(value)
       case _ => ()
     }
   }
-  def readInt32(fieldId: Short, value: Int): Unit = {}
   def readInt64(fieldId: Short, value: Long): Unit = {}
   def readDouble(fieldId: Short, value: Double): Unit = {}
   def readBinary(fieldId: Short, value: Array[Byte]): Unit = {

@@ -244,6 +244,10 @@ object SimpleProtocol extends Protocol {
   }
 
   object StructCoder {
+    def notImplemented[A]: Decoder[A] = new Decoder[A] {
+      def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = ???
+    }
+
     val DecodersByTypeId: Array[Decoder[_]] = Array(
       null,
       /* 0x1 */ BooleanTrueDecoder,
@@ -252,11 +256,11 @@ object SimpleProtocol extends Protocol {
       /* 0x4 */ Int16Decoder,
       /* 0x5 */ Int32Decoder,
       /* 0x6 */ Int64Decoder,
-      /* 0x7 */ ???, // DoubleDecoder,
-      /* 0x8 */ ???, // BinaryDecoder,
-      /* 0x9 */ ???, // ListDecoder,
-      /* 0xA */ ???, // SetDecoder,
-      /* 0xB */ ??? // MapDecoder
+      /* 0x7 */ notImplemented[Double], // DoubleDecoder,
+      /* 0x8 */ notImplemented[Array[Byte]], // BinaryDecoder,
+      /* 0x9 */ notImplemented[List[_]], // ListDecoder,
+      /* 0xA */ notImplemented[Set[_]], // SetDecoder,
+      /* 0xB */ notImplemented[Map[_, _]] // MapDecoder
       // 0xC: StructDecoder
     )
   }
