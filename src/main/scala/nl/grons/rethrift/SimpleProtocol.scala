@@ -201,9 +201,8 @@ object SimpleProtocol extends Protocol {
   class StructDecoder[A](structBuilder: StructBuilder[A]) extends Decoder[A] {
     var previousFieldId: Short = 0
 
-    @tailrec
-    override final def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
-      val result = new FieldHeaderDecoder(previousFieldId)
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
+      new FieldHeaderDecoder(previousFieldId)
         .decode(buffer, readOffset)
         .andThen { (fieldHeader, buffer, readOffset) =>
           if (fieldHeader.isStopField) {
@@ -231,15 +230,11 @@ object SimpleProtocol extends Protocol {
                   case _ => ??? // TODO: add support for list, set, map
                 }
                 this.previousFieldId = fieldHeader.fieldId
-                // Special marker result to prevent the need for 2 stackframes per field
-                Continue(buffer, readOffset)
+                // TODO: prevent huge stack usage (this code uses 2 stackframes per field)
+                this.decode(buffer, readOffset)
               }
           }
         }
-      result match {
-        case Continue(notConsumed, notConsumedBufferReadOffset) => this.decode(notConsumed, notConsumedBufferReadOffset)
-        case _ => result
-      }
     }
   }
 

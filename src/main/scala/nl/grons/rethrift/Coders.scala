@@ -33,12 +33,6 @@ case class DecodeUnsufficientData[A](e: Decoder[A]) extends DecodeResult[A] {
   }
 }
 
-private[rethrift] case class Continue[A](notConsumed: DirectBuffer, notConsumedBufferReadOffset: Int) extends DecodeResult[A] {
-  override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
-    throw new IllegalStateException("only for internal usage")
-  }
-}
-
 sealed abstract class EncodeResult[A]
 case class EncodeFailure[A](e: Exception) extends EncodeResult[A]
 case class Encoded[A](value: A, notConsumed: DirectBuffer) extends EncodeResult[A]
