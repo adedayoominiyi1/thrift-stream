@@ -2,11 +2,19 @@ package nl.grons.rethrift
 
 import uk.co.real_logic.agrona.DirectBuffer
 
+import scala.annotation.tailrec
+
+// Protocol
+
 trait Protocol {
   def structDecoder[A](structBuilder: StructBuilder[A]): Decoder[A]
 }
 
-// Encoders, Decoders, Coders
+// Decoders
+
+trait Decoder[A] {
+  def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A]
+}
 
 sealed abstract class DecodeResult[A] {
   def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B]
@@ -22,16 +30,54 @@ case class DecodeFailure[A](error: String) extends DecodeResult[A] {
   override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = DecodeFailure(error)
 }
 
-case class DecodeUnsufficientData[A](e: Decoder[A]) extends DecodeResult[A] {
+case class DecodeUnsufficientData[A](continuationDecoder: Decoder[A]) extends DecodeResult[A] {
   override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
     // Return a decoder that can continue later, first handling the given function
     DecodeUnsufficientData(new Decoder[B] {
       override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] = {
-        e.decode(buffer, readOffset).andThen(function)
+        continuationDecoder.decode(buffer, readOffset).andThen(function)
       }
     })
   }
 }
+
+/** Trampoline continuation. See [[Decoder.trampoliningDecoder]]. */
+case class Continue[A](private val thunk: () => DecodeResult[A]) extends DecodeResult[A] {
+  override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
+    thunk().andThen(function)
+  }
+}
+
+object Decoder {
+  /**
+    * A [[Decoder]] that only returns [[Decoded]], [[DecodeFailure]] or [[DecodeUnsufficientData]]
+    * (and ''not'' [[Continue]]) results.
+    * It does this by replacing a [[Continue]] with the result of executing its embedded thunk.
+    *
+    * See [[http://blog.richdougherty.com/2009/04/tail-calls-tailrec-and-trampolines.html]] for inspiration.
+    *
+    * @param decoder the decoder to wrap
+    * @tparam A type of expected decode result
+    * @return a new decoder
+    */
+  def trampoliningDecoder[A](decoder: Decoder[A]): Decoder[A] = {
+    new Decoder[A] {
+      def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
+        trampoline(decoder.decode(buffer, readOffset))
+      }
+    }
+  }
+
+  @tailrec
+  private def trampoline[A](decodeResult: DecodeResult[A]): DecodeResult[A] = {
+    decodeResult match {
+      case Continue(thunk) => trampoline(thunk())
+      case result => result
+    }
+  }
+}
+
+// Encoders
 
 sealed abstract class EncodeResult[A]
 case class EncodeFailure[A](e: Exception) extends EncodeResult[A]
@@ -41,9 +87,7 @@ trait Encoder[A] {
   def encode(a: A, bufferFactory: () => DirectBuffer): EncodeResult[A]
 }
 
-trait Decoder[A] {
-  def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A]
-}
+// Coders
 
 trait Coder[A] extends Encoder[A] with Decoder[A]
 

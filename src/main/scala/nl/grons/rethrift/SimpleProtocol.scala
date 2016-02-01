@@ -3,12 +3,10 @@ package nl.grons.rethrift
 import uk.co.real_logic.agrona.DirectBuffer
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
-import scala.annotation.tailrec
-
 object SimpleProtocol extends Protocol {
 
   def structDecoder[A](structBuilder: StructBuilder[A]): Decoder[A] = {
-    new StructDecoder[A](structBuilder)
+    Decoder.trampoliningDecoder(new StructDecoder[A](structBuilder))
   }
 
   // Simple decoders
@@ -199,9 +197,12 @@ object SimpleProtocol extends Protocol {
   // Struct decoder
 
   class StructDecoder[A](structBuilder: StructBuilder[A]) extends Decoder[A] {
-    var previousFieldId: Short = 0
 
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
+      decodeNextField(buffer, readOffset, 0, 0)
+    }
+
+    private def decodeNextField(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, previousFieldId: Short): DecodeResult[A] = {
       new FieldHeaderDecoder(previousFieldId)
         .decode(buffer, readOffset)
         .andThen { (fieldHeader, buffer, readOffset) =>
@@ -229,9 +230,13 @@ object SimpleProtocol extends Protocol {
                   case 12 => structBuilder.readStruct(fieldId, fieldValue)
                   case _ => ??? // TODO: add support for list, set, map
                 }
-                this.previousFieldId = fieldHeader.fieldId
-                // TODO: prevent huge stack usage (this code uses 2 stackframes per field)
-                this.decode(buffer, readOffset)
+
+                // Initiate a bounce on the trampoline when we reached our stack-frames budget
+                if (stackDepth < 100) {
+                  this.decodeNextField(buffer, readOffset, stackDepth + 1, fieldHeader.fieldId)
+                } else {
+                  Continue(() => this.decodeNextField(buffer, readOffset, 0, fieldHeader.fieldId))
+                }
               }
           }
         }
