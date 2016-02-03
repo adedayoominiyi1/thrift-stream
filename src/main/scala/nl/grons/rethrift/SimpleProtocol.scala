@@ -139,8 +139,8 @@ object SimpleProtocol extends Protocol {
           val fieldIdDelta = (byte1 >> 4).toShort
           val fieldTypeId = byte1 & 0x0F
 
-          if (fieldTypeId < 1 || fieldTypeId > 12) {
-            DecodeFailure("Not supported field type id: " + fieldTypeId)
+          if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
+            DecodeFailure("Not supported type id: " + fieldTypeId)
 
           } else if (fieldIdDelta != 0) {
             // Short form (1 byte).
@@ -183,7 +183,7 @@ object SimpleProtocol extends Protocol {
         val concatenatedBuffer = new UnsafeBuffer(concatenatedData)
         val fieldTypeId = concatenatedBuffer.getByte(0) & 0x0f
         val fieldId = concatenatedBuffer.getShort(1)
-        if (fieldTypeId < 1 || fieldTypeId > 12) {
+        if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
           DecodeFailure("Not supported field type id: " + fieldTypeId)
         } else {
           Decoded(FieldHeader(fieldId, fieldTypeId), buffer, newDataReadOffset)
@@ -196,6 +196,8 @@ object SimpleProtocol extends Protocol {
 
   // Struct decoder
 
+  // Warning: As structBuilder is not re-usable, StructDecoder is neither
+  // TODO: make StructDecoder fully immutable and re-usable
   class StructDecoder[A](structBuilder: StructBuilder[A]) extends Decoder[A] {
 
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
@@ -207,15 +209,17 @@ object SimpleProtocol extends Protocol {
         .decode(buffer, readOffset)
         .andThen { (fieldHeader, buffer, readOffset) =>
           if (fieldHeader.isStopField) {
-            Decoded(structBuilder.stopStruct(), buffer, readOffset)
+            // Done
+            Decoded(structBuilder.build(), buffer, readOffset)
           } else {
             val fieldTypeId = fieldHeader.fieldTypeId
-            val fieldDecoder = if (fieldTypeId == 12) {
-              new StructDecoder(structBuilder.startStruct(fieldHeader.fieldId))
-            } else {
-              StructCoder.DecodersByTypeId(fieldTypeId)
+            val fieldDecoder = fieldTypeId match {
+              case  9 => new ListDecoder(structBuilder.listBuilderForField(fieldHeader.fieldId))
+              case 12 => new StructDecoder(structBuilder.structBuilderForField(fieldHeader.fieldId))
+              case  _ => StructDecoder.DecodersByTypeId(fieldTypeId)
             }
-            fieldDecoder.decode(buffer, readOffset)
+            fieldDecoder
+              .decode(buffer, readOffset)
               .andThen { (fieldValue, buffer, readOffset) =>
                 val fieldId = fieldHeader.fieldId
                 val typeId = fieldHeader.fieldTypeId
@@ -227,8 +231,9 @@ object SimpleProtocol extends Protocol {
                   case 6 => structBuilder.readInt64(fieldId, fieldValue.asInstanceOf[Long])
                   case 7 => structBuilder.readDouble(fieldId, fieldValue.asInstanceOf[Double])
                   case 8 => structBuilder.readBinary(fieldId, fieldValue.asInstanceOf[Array[Byte]])
+                  case 9 => structBuilder.readList(fieldId, fieldValue.asInstanceOf[Seq[_]])
                   case 12 => structBuilder.readStruct(fieldId, fieldValue)
-                  case _ => ??? // TODO: add support for list, set, map
+                  case _ => ??? // TODO: add support for set, map
                 }
 
                 // Initiate a bounce on the trampoline when we reached our stack-frames budget
@@ -243,7 +248,7 @@ object SimpleProtocol extends Protocol {
     }
   }
 
-  object StructCoder {
+  object StructDecoder {
     def notImplemented[A]: Decoder[A] = new Decoder[A] {
       def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = ???
     }
@@ -258,14 +263,134 @@ object SimpleProtocol extends Protocol {
       /* 0x6 */ Int64Decoder,
       /* 0x7 */ notImplemented[Double], // DoubleDecoder,
       /* 0x8 */ notImplemented[Array[Byte]], // BinaryDecoder,
-      /* 0x9 */ notImplemented[List[_]], // ListDecoder,
+      /* 0x9 */ notImplemented[Seq[_]], // ListDecoder,
       /* 0xA */ notImplemented[Set[_]], // SetDecoder,
       /* 0xB */ notImplemented[Map[_, _]] // MapDecoder
       // 0xC: StructDecoder
     )
   }
 
-  object DecoderUtil {
+  // List and set decoder
+
+  case class ListSetHeader(size: Int, itemTypeId: Int)
+
+  object ListSetHeaderDecoder extends Decoder[ListSetHeader] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
+      val availableByteCount = buffer.capacity() - readOffset
+      if (availableByteCount < 1) {
+        // no data available at all
+        DecodeUnsufficientData(this)
+      } else {
+        val byte1 = buffer.getByte(readOffset) & 0xFF
+        // First byte looks as follows:
+        //  76543210
+        // +--------+
+        // |sssstttt|
+        // +--------+
+        // s = size of the list or set (unsigned 4 bits). Value 0xF for extended form, otherwise short form.
+        // t = item type id (unsigned 4 bits).
+        //
+        val size = byte1 >> 4
+        val itemTypeId = byte1 & 0x0F
+
+        if (itemTypeId < 1 || itemTypeId > 12) {
+          DecodeFailure("Not supported type id: " + itemTypeId)
+
+        } else if (size != 0xF) {
+          // Short form (1 byte).
+          Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset + 1)
+
+        } else {
+          // Extended form (5 bytes).
+          //  76543210 76543210 76543210 76543210 76543210
+          // +--------+--------+--------+--------+--------+
+          // |1111tttt|ssssssss|ssssssss|ssssssss|ssssssss|
+          // +--------+--------+--------+--------+--------+
+          // t = item type id (unsigned 4 bits)
+          // s = size (signed 32 bits)
+          //
+          if (availableByteCount >= 5) {
+            val size = buffer.getInt(readOffset + 1)
+            if (size < 0) {
+              DecodeFailure("Collection size must be positive " + size)
+            } else {
+              Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset + 5)
+            }
+
+          } else {
+            val availableBytes = Array.ofDim[Byte](availableByteCount)
+            buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
+            DecodeUnsufficientData(new ListSetHeaderContinuationDecoder(availableBytes))
+          }
+        }
+      }
+    }
+
+    private class ListSetHeaderContinuationDecoder(previousData: Array[Byte]) extends Decoder[ListSetHeader] {
+      require(previousData.length < 5)
+
+      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
+        val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 5)
+        if (concatenatedData.length == 5) {
+          val concatenatedBuffer = new UnsafeBuffer(concatenatedData)
+          val itemTypeId = concatenatedBuffer.getByte(0) & 0x0f
+          val size = concatenatedBuffer.getInt(1)
+          // itemTypeId was already verified to be correct
+          if (size < 0) {
+            DecodeFailure("Collection size must be positive " + size)
+          } else {
+            Decoded(ListSetHeader(size, itemTypeId), buffer, newDataReadOffset)
+          }
+        } else {
+          DecodeUnsufficientData(new ListSetHeaderContinuationDecoder(concatenatedData))
+        }
+      }
+    }
+  }
+
+  class ListDecoder[A](listBuilder: ListBuilder[A]) extends Decoder[Seq[A]] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Seq[A]] = {
+      ListSetHeaderDecoder
+        .decode(buffer, readOffset)
+        .andThen { (listSetHeader, buffer, readOffset) =>
+          // TODO: enforce collection size limit
+          listBuilder.init(listSetHeader.size)
+          decodeNextItem(buffer, readOffset, 0, listBuilder, listSetHeader.size, listSetHeader.itemTypeId)
+        }
+    }
+
+    private def decodeNextItem(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, listBuilder: ListBuilder[A], itemsLeftToRead: Int, itemTypeId: Int): DecodeResult[Seq[A]] = {
+      if (itemsLeftToRead <= 0) {
+        // Done
+        Decoded(listBuilder.build(), buffer, readOffset)
+      } else {
+        // TODO: when all decoders are reusable, move lookup of decoder to method `decode` above.
+        val itemDecoder = itemTypeId match {
+          case  9 => new ListDecoder(listBuilder.listBuilderForItem())
+          case 12 => new StructDecoder(listBuilder.structBuilderForItem())
+          case  _ => StructDecoder.DecodersByTypeId(itemTypeId)
+        }
+        itemDecoder
+          .decode(buffer, readOffset)
+          .andThen { (itemValue, buffer, readOffset) =>
+            listBuilder.readItem(itemValue.asInstanceOf[A])
+
+            // Initiate a bounce on the trampoline when we reached our stack-frames budget
+            if (stackDepth < 50) {
+              this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemTypeId)
+            } else {
+              Continue(() => this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemTypeId))
+            }
+          }
+      }
+    }
+  }
+
+  // Util
+
+  private object DecoderUtil {
+    def isInvalidTypeId(typeId: Int): Boolean = typeId < 1 || typeId > 12
+
     /**
       * Concatenates the bytes in 'previousData' with bytes from 'newData' such that the result is 'needed' bytes
       * long (if possible).

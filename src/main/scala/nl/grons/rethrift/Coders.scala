@@ -92,9 +92,11 @@ trait Encoder[A] {
 trait Coder[A] extends Encoder[A] with Decoder[A]
 
 trait StructBuilder[A] {
-  def startStruct(fieldId: Short): StructBuilder[_]
+  def build(): A
 
-  def stopStruct(): A
+  def listBuilderForField(fieldId: Short): ListBuilder[_]
+
+  def structBuilderForField(fieldId: Short): StructBuilder[_]
 
   def readBoolean(fieldId: Short, value: Boolean): Unit
 
@@ -110,15 +112,19 @@ trait StructBuilder[A] {
 
   def readBinary(fieldId: Short, value: Array[Byte]): Unit
 
-  // TODO: what about list, set, map ???
+  def readList(fieldId: Short, value: Seq[_]): Unit
 
-  def readStruct(fieldId: Short, fieldValue: Any): Unit
+  // TODO: add set, map
+
+  def readStruct(fieldId: Short, value: Any): Unit
 }
 
-object AnonymousStructBuilder extends StructBuilder[Unit] {
-  def startStruct(fieldId: Short): StructBuilder[_] = AnonymousStructBuilder
+object BlackHoleStructBuilder extends StructBuilder[Unit] {
+  def build(): Unit = {}
 
-  def stopStruct(): Unit = {}
+  def listBuilderForField(fieldId: Short): ListBuilder[_] = BlackHoleListBuilder
+
+  def structBuilderForField(fieldId: Short): StructBuilder[_] = BlackHoleStructBuilder
 
   def readBoolean(fieldId: Short, value: Boolean): Unit = {}
 
@@ -134,8 +140,29 @@ object AnonymousStructBuilder extends StructBuilder[Unit] {
 
   def readBinary(fieldId: Short, value: Array[Byte]): Unit = {}
 
-  // TODO: what about list, set, map ???
+  def readList(fieldId: Short, value: Seq[_]): Unit = {}
 
-  def readStruct(fieldId: Short, fieldValue: Any): Unit = {}
+  def readStruct(fieldId: Short, value: Any): Unit = {}
 }
 
+trait ListBuilder[A] {
+  def init(size: Int): Unit
+
+  def build(): Seq[A]
+
+  def listBuilderForItem(): ListBuilder[_] = BlackHoleListBuilder
+
+  def structBuilderForItem(): StructBuilder[_] = BlackHoleStructBuilder
+
+  def readItem(value: A): Unit
+
+  // TODO: add set, map
+}
+
+object BlackHoleListBuilder extends ListBuilder[Unit] {
+  def init(size: Int): Unit = {}
+
+  def build(): Seq[Unit] = Seq.empty
+
+  def readItem(value: Unit): Unit = {}
+}
