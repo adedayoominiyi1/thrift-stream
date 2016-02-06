@@ -91,10 +91,14 @@ trait Encoder[A] {
 
 trait Coder[A] extends Encoder[A] with Decoder[A]
 
+// Builders
+
 trait StructBuilder[A] {
   def build(): A
 
-  def listBuilderForField(fieldId: Short): ListBuilder[_]
+  def collectionBuilderForField(fieldId: Short): CollectionBuilder[_]
+
+  def mapBuilderForField(fieldId: Short): MapBuilder[_]
 
   def structBuilderForField(fieldId: Short): StructBuilder[_]
 
@@ -112,9 +116,9 @@ trait StructBuilder[A] {
 
   def readBinary(fieldId: Short, value: Array[Byte]): Unit
 
-  def readList(fieldId: Short, value: Seq[_]): Unit
+  def readCollection(fieldId: Short, value: Any): Unit
 
-  // TODO: add set, map
+  def readMap(fieldId: Short, value: Any): Unit
 
   def readStruct(fieldId: Short, value: Any): Unit
 }
@@ -122,7 +126,9 @@ trait StructBuilder[A] {
 object BlackHoleStructBuilder extends StructBuilder[Unit] {
   def build(): Unit = {}
 
-  def listBuilderForField(fieldId: Short): ListBuilder[_] = BlackHoleListBuilder
+  def collectionBuilderForField(fieldId: Short): CollectionBuilder[_] = BlackHoleCollectionBuilder
+
+  def mapBuilderForField(fieldId: Short): MapBuilder[_] = BlackHoleMapBuilder
 
   def structBuilderForField(fieldId: Short): StructBuilder[_] = BlackHoleStructBuilder
 
@@ -140,29 +146,59 @@ object BlackHoleStructBuilder extends StructBuilder[Unit] {
 
   def readBinary(fieldId: Short, value: Array[Byte]): Unit = {}
 
-  def readList(fieldId: Short, value: Seq[_]): Unit = {}
+  def readCollection(fieldId: Short, value: Any): Unit = {}
+
+  def readMap(fieldId: Short, value: Any): Unit = {}
 
   def readStruct(fieldId: Short, value: Any): Unit = {}
 }
 
-trait ListBuilder[A] {
+trait CollectionBuilder[A] {
   def init(size: Int): Unit
 
-  def build(): Seq[A]
+  def build(): A
 
-  def listBuilderForItem(): ListBuilder[_] = BlackHoleListBuilder
+  def collectionBuilderForItem(): CollectionBuilder[_] = BlackHoleCollectionBuilder
+
+  def mapBuilderForItem(): MapBuilder[_] = BlackHoleMapBuilder
 
   def structBuilderForItem(): StructBuilder[_] = BlackHoleStructBuilder
 
-  def readItem(value: A): Unit
-
-  // TODO: add set, map
+  def readItem(value: Any): Unit
 }
 
-object BlackHoleListBuilder extends ListBuilder[Unit] {
+object BlackHoleCollectionBuilder extends CollectionBuilder[Unit] {
   def init(size: Int): Unit = {}
 
-  def build(): Seq[Unit] = Seq.empty
+  def build(): Unit = {}
 
-  def readItem(value: Unit): Unit = {}
+  def readItem(value: Any): Unit = {}
+}
+
+trait MapBuilder[A] {
+  def init(size: Int): Unit
+
+  def build(): A
+
+  def collectionBuilderForKey(): CollectionBuilder[_] = BlackHoleCollectionBuilder
+
+  def mapBuilderForKey(): MapBuilder[_] = BlackHoleMapBuilder
+
+  def structBuilderForKey(): StructBuilder[_] = BlackHoleStructBuilder
+
+  def collectionBuilderForValue(): CollectionBuilder[_] = BlackHoleCollectionBuilder
+
+  def mapBuilderForValue(): MapBuilder[_] = BlackHoleMapBuilder
+
+  def structBuilderForValue(): StructBuilder[_] = BlackHoleStructBuilder
+
+  def readItem(key: Any, value: Any): Unit
+}
+
+object BlackHoleMapBuilder extends MapBuilder[Unit] {
+  def init(size: Int): Unit = {}
+
+  def build(): Unit = {}
+
+  def readItem(key: Any, value: Any): Unit = {}
 }

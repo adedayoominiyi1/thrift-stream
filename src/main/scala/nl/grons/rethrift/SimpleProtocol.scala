@@ -214,7 +214,8 @@ object SimpleProtocol extends Protocol {
           } else {
             val fieldTypeId = fieldHeader.fieldTypeId
             val fieldDecoder = fieldTypeId match {
-              case  9 => new ListDecoder(structBuilder.listBuilderForField(fieldHeader.fieldId))
+              case  9 | 10 => new ListDecoder(structBuilder.collectionBuilderForField(fieldHeader.fieldId))
+//              case 11 => new MapDecoder(structBuilder.mapBuilderForField(fieldHeader.fieldId))
               case 12 => new StructDecoder(structBuilder.structBuilderForField(fieldHeader.fieldId))
               case  _ => StructDecoder.DecodersByTypeId(fieldTypeId)
             }
@@ -231,9 +232,10 @@ object SimpleProtocol extends Protocol {
                   case 6 => structBuilder.readInt64(fieldId, fieldValue.asInstanceOf[Long])
                   case 7 => structBuilder.readDouble(fieldId, fieldValue.asInstanceOf[Double])
                   case 8 => structBuilder.readBinary(fieldId, fieldValue.asInstanceOf[Array[Byte]])
-                  case 9 => structBuilder.readList(fieldId, fieldValue.asInstanceOf[Seq[_]])
+                  case 9 | 10 => structBuilder.readCollection(fieldId, fieldValue)
+                  case 11 => structBuilder.readMap(fieldId, fieldValue)
                   case 12 => structBuilder.readStruct(fieldId, fieldValue)
-                  case _ => ??? // TODO: add support for set, map
+                  case _ => ???
                 }
 
                 // Initiate a bounce on the trampoline when we reached our stack-frames budget
@@ -348,7 +350,7 @@ object SimpleProtocol extends Protocol {
     }
   }
 
-  class ListDecoder[A](listBuilder: ListBuilder[A]) extends Decoder[Seq[A]] {
+  class ListDecoder[A](listBuilder: CollectionBuilder[A]) extends Decoder[Seq[A]] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Seq[A]] = {
       ListSetHeaderDecoder
         .decode(buffer, readOffset)
@@ -359,14 +361,14 @@ object SimpleProtocol extends Protocol {
         }
     }
 
-    private def decodeNextItem(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, listBuilder: ListBuilder[A], itemsLeftToRead: Int, itemTypeId: Int): DecodeResult[Seq[A]] = {
+    private def decodeNextItem(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, listBuilder: CollectionBuilder[A], itemsLeftToRead: Int, itemTypeId: Int): DecodeResult[Seq[A]] = {
       if (itemsLeftToRead <= 0) {
         // Done
         Decoded(listBuilder.build(), buffer, readOffset)
       } else {
         // TODO: when all decoders are reusable, move lookup of decoder to method `decode` above.
         val itemDecoder = itemTypeId match {
-          case  9 => new ListDecoder(listBuilder.listBuilderForItem())
+          case  9 => new ListDecoder(listBuilder.collectionBuilderForItem())
           case 12 => new StructDecoder(listBuilder.structBuilderForItem())
           case  _ => StructDecoder.DecodersByTypeId(itemTypeId)
         }
