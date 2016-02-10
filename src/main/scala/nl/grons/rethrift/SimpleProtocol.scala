@@ -5,8 +5,8 @@ import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
 object SimpleProtocol extends Protocol {
 
-  def structDecoder[A](structBuilder: StructBuilder[A]): Decoder[A] = {
-    Decoder.trampoliningDecoder(new StructDecoder[A](structBuilder))
+  override def structDecoder[A](structBuilder: () => StructBuilder): Decoder[A] = {
+    Decoder.trampoliningDecoder(new StructDecoder(structBuilder))
   }
 
   // Simple decoders
@@ -196,28 +196,26 @@ object SimpleProtocol extends Protocol {
 
   // Struct decoder
 
-  // Warning: As structBuilder is not re-usable, StructDecoder is neither
-  // TODO: make StructDecoder fully immutable and re-usable
-  class StructDecoder[A](structBuilder: StructBuilder[A]) extends Decoder[A] {
+  class StructDecoder[A](structBuilder: () => StructBuilder) extends Decoder[A] {
 
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
-      decodeNextField(buffer, readOffset, 0, 0)
+      decodeNextField(buffer, readOffset, 0, structBuilder(), 0)
     }
 
-    private def decodeNextField(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, previousFieldId: Short): DecodeResult[A] = {
+    private def decodeNextField(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, structBuilder: StructBuilder, previousFieldId: Short): DecodeResult[A] = {
       new FieldHeaderDecoder(previousFieldId)
         .decode(buffer, readOffset)
         .andThen { (fieldHeader, buffer, readOffset) =>
           if (fieldHeader.isStopField) {
             // Done
-            Decoded(structBuilder.build(), buffer, readOffset)
+            Decoded(structBuilder.build().asInstanceOf[A], buffer, readOffset)
           } else {
             val fieldTypeId = fieldHeader.fieldTypeId
             val fieldDecoder = fieldTypeId match {
-              case  9 | 10 => new ListDecoder(structBuilder.collectionBuilderForField(fieldHeader.fieldId))
+              case  9 | 10 => new CollectionDecoder(structBuilder.collectionBuilderForField(fieldHeader.fieldId))
 //              case 11 => new MapDecoder(structBuilder.mapBuilderForField(fieldHeader.fieldId))
               case 12 => new StructDecoder(structBuilder.structBuilderForField(fieldHeader.fieldId))
-              case  _ => StructDecoder.DecodersByTypeId(fieldTypeId)
+              case  _ => PrimitiveDecodersByTypeId(fieldTypeId)
             }
             fieldDecoder
               .decode(buffer, readOffset)
@@ -235,14 +233,13 @@ object SimpleProtocol extends Protocol {
                   case 9 | 10 => structBuilder.readCollection(fieldId, fieldValue)
                   case 11 => structBuilder.readMap(fieldId, fieldValue)
                   case 12 => structBuilder.readStruct(fieldId, fieldValue)
-                  case _ => ???
                 }
 
                 // Initiate a bounce on the trampoline when we reached our stack-frames budget
                 if (stackDepth < 100) {
-                  this.decodeNextField(buffer, readOffset, stackDepth + 1, fieldHeader.fieldId)
+                  this.decodeNextField(buffer, readOffset, stackDepth + 1, structBuilder, fieldHeader.fieldId)
                 } else {
-                  Continue(() => this.decodeNextField(buffer, readOffset, 0, fieldHeader.fieldId))
+                  Continue(() => this.decodeNextField(buffer, readOffset, 0, structBuilder, fieldHeader.fieldId))
                 }
               }
           }
@@ -250,27 +247,26 @@ object SimpleProtocol extends Protocol {
     }
   }
 
-  object StructDecoder {
-    def notImplemented[A]: Decoder[A] = new Decoder[A] {
-      def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = ???
-    }
-
-    val DecodersByTypeId: Array[Decoder[_]] = Array(
-      null,
-      /* 0x1 */ BooleanTrueDecoder,
-      /* 0x2 */ BooleanFalseDecoder,
-      /* 0x3 */ Int8Decoder,
-      /* 0x4 */ Int16Decoder,
-      /* 0x5 */ Int32Decoder,
-      /* 0x6 */ Int64Decoder,
-      /* 0x7 */ notImplemented[Double], // DoubleDecoder,
-      /* 0x8 */ notImplemented[Array[Byte]], // BinaryDecoder,
-      /* 0x9 */ notImplemented[Seq[_]], // ListDecoder,
-      /* 0xA */ notImplemented[Set[_]], // SetDecoder,
-      /* 0xB */ notImplemented[Map[_, _]] // MapDecoder
-      // 0xC: StructDecoder
-    )
+  // TODO: implement Double and Array[Byte] decoders
+  private def notImplemented[A]: Decoder[A] = new Decoder[A] {
+    def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = ???
   }
+
+  private val PrimitiveDecodersByTypeId: Array[Decoder[_]] = Array(
+    null,
+    /* 0x1 */ BooleanTrueDecoder,
+    /* 0x2 */ BooleanFalseDecoder,
+    /* 0x3 */ Int8Decoder,
+    /* 0x4 */ Int16Decoder,
+    /* 0x5 */ Int32Decoder,
+    /* 0x6 */ Int64Decoder,
+    /* 0x7 */ notImplemented[Double], // DoubleDecoder,
+    /* 0x8 */ notImplemented[Array[Byte]] // BinaryDecoder
+    // 0x9: ListDecoder,
+    // 0xA: SetDecoder,
+    // 0xB: MapDecoder
+    // 0xC: StructDecoder
+  )
 
   // List and set decoder
 
@@ -350,28 +346,28 @@ object SimpleProtocol extends Protocol {
     }
   }
 
-  class ListDecoder[A](listBuilder: CollectionBuilder[A]) extends Decoder[Seq[A]] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Seq[A]] = {
+  class CollectionDecoder[A](listBuilderF: (Int) => CollectionBuilder) extends Decoder[A] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
       ListSetHeaderDecoder
         .decode(buffer, readOffset)
         .andThen { (listSetHeader, buffer, readOffset) =>
-          // TODO: enforce collection size limit
-          listBuilder.init(listSetHeader.size)
-          decodeNextItem(buffer, readOffset, 0, listBuilder, listSetHeader.size, listSetHeader.itemTypeId)
+          // TODO: enforce global collection size limit
+          val listBuilder = listBuilderF(listSetHeader.size)
+          val itemDecoder = listSetHeader.itemTypeId match {
+            case 9 | 10 => new CollectionDecoder(listBuilder.collectionBuilderForItem())
+            // case 11 => new MapDecoder(listBuilder.mapBuilderForItem())
+            case 12 => new StructDecoder(listBuilder.structBuilderForItem())
+            case itemTypeId => PrimitiveDecodersByTypeId(itemTypeId)
+          }
+          decodeNextItem(buffer, readOffset, 0, listBuilder, listSetHeader.size, itemDecoder)
         }
     }
 
-    private def decodeNextItem(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, listBuilder: CollectionBuilder[A], itemsLeftToRead: Int, itemTypeId: Int): DecodeResult[Seq[A]] = {
+    private def decodeNextItem(buffer: DirectBuffer, readOffset: Int, stackDepth: Int, listBuilder: CollectionBuilder, itemsLeftToRead: Int, itemDecoder: Decoder[_]): DecodeResult[A] = {
       if (itemsLeftToRead <= 0) {
         // Done
-        Decoded(listBuilder.build(), buffer, readOffset)
+        Decoded(listBuilder.build().asInstanceOf[A], buffer, readOffset)
       } else {
-        // TODO: when all decoders are reusable, move lookup of decoder to method `decode` above.
-        val itemDecoder = itemTypeId match {
-          case  9 => new ListDecoder(listBuilder.collectionBuilderForItem())
-          case 12 => new StructDecoder(listBuilder.structBuilderForItem())
-          case  _ => StructDecoder.DecodersByTypeId(itemTypeId)
-        }
         itemDecoder
           .decode(buffer, readOffset)
           .andThen { (itemValue, buffer, readOffset) =>
@@ -379,9 +375,9 @@ object SimpleProtocol extends Protocol {
 
             // Initiate a bounce on the trampoline when we reached our stack-frames budget
             if (stackDepth < 50) {
-              this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemTypeId)
+              this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder)
             } else {
-              Continue(() => this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemTypeId))
+              Continue(() => this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder))
             }
           }
       }
