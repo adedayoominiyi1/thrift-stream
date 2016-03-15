@@ -1,6 +1,6 @@
-package nl.grons.rethrift
+package nl.grons.reactivethrift
 
-import nl.grons.rethrift.example.{BookStructBuilder, Book}
+import nl.grons.reactivethrift.example.{BookStructBuilder, Book}
 import org.scalatest.FunSpec
 import org.scalatest.Matchers._
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer

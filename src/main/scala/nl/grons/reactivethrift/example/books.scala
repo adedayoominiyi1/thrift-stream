@@ -1,11 +1,12 @@
-package nl.grons.rethrift.example
+package nl.grons.reactivethrift.example
 
 import java.nio.charset.StandardCharsets
 
-import nl.grons.rethrift._
+import nl.grons.reactivethrift._
 
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
+
+// This file contains the code that would be generated from a thrift IDL file.
 
 // struct Author {
 //   1: string name

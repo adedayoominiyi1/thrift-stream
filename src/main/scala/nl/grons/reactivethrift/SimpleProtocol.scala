@@ -1,4 +1,4 @@
-package nl.grons.rethrift
+package nl.grons.reactivethrift
 
 import uk.co.real_logic.agrona.DirectBuffer
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer

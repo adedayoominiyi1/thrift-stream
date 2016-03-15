@@ -1,4 +1,4 @@
-package nl.grons.rethrift
+package nl.grons.reactivethrift
 
 import uk.co.real_logic.agrona.DirectBuffer
 
@@ -15,6 +15,14 @@ trait Protocol {
 trait Decoder[A] {
   def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A]
 }
+
+// TODO: rewrite DecodeResult to following pattern
+// sealed trait Result
+// object Result{
+//   case class Success(value: String) extends Result
+//   case class Failure(msg: String) extends Result
+//   case class Error(msg: String) extends Result
+// }
 
 sealed abstract class DecodeResult[A] {
   def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B]

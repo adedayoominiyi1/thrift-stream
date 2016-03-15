@@ -1,7 +1,7 @@
 
 organization := "nl.grons"
 
-name := "rethrift"
+name := "reactive-thrift"
 
 version := "0.0.0"
 
@@ -11,7 +11,7 @@ description <<= (scalaVersion) { sv =>
 
 scalaVersion := "2.10.6"
 
-crossScalaVersions := Seq("2.10.6", "2.11.7")
+crossScalaVersions := Seq("2.10.6", "2.11.8")
 
 crossVersion := CrossVersion.binary
 
