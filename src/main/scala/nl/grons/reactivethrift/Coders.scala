@@ -33,8 +33,99 @@ object MessageType {
 
 // Decoders
 
-trait Decoder[A] {
+object Decoder {
+
+  /**
+    * A [[Decoder]] that only returns [[Decoded]], [[DecodeFailure]] or [[DecodeInsufficientData]]
+    * (and ''not'' [[Continue]]) results.
+    * It does this by replacing a [[Continue]] with the result of executing its embedded thunk.
+    *
+    * See [[http://blog.richdougherty.com/2009/04/tail-calls-tailrec-and-trampolines.html]] for inspiration.
+    *
+    * @param decoder the decoder to wrap
+    * @tparam A type of expected decode result
+    * @return a new decoder
+    */
+  def trampoliningDecoder[A](decoder: Decoder[A]): Decoder[A] = {
+    @tailrec
+    def trampoline(decodeResult: DecodeResult[A]): DecodeResult[A] = {
+      decodeResult match {
+        case Continue(thunk) => trampoline(thunk())
+        case result => result
+      }
+    }
+
+    new Decoder[A] {
+      def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
+        trampoline(decoder.decode(buffer, readOffset))
+      }
+    }
+  }
+
+  def zip[A, B](aDecoder: Decoder[A], bDecoder: Decoder[B]): Decoder[(A, B)] = new Decoder[(A, B)] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B)] = {
+      //noinspection VariablePatternShadow
+      aDecoder
+        .decode(buffer, readOffset)
+        .andThen { case (a, buffer, readOffset) =>
+          bDecoder
+            .decode(buffer, readOffset)
+            .andThen { case (b, buffer, readOffset) =>
+              Decoded((a, b), buffer, readOffset)
+            }
+        }
+    }
+  }
+
+  def zip3[A, B, C](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C]): Decoder[(A, B, C)] = new Decoder[(A, B, C)] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B, C)] = {
+      //noinspection VariablePatternShadow
+      aDecoder
+        .decode(buffer, readOffset)
+        .andThen { case (a, buffer, readOffset) =>
+          bDecoder
+            .decode(buffer, readOffset)
+            .andThen { case (b, buffer, readOffset) =>
+              cDecoder
+                .decode(buffer, readOffset)
+                .andThen { case (c, buffer, readOffset) =>
+                  Decoded((a, b, c), buffer, readOffset)
+                }
+            }
+        }
+    }
+  }
+
+  def zip4[A, B, C, D](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C], dDecoder: Decoder[D]): Decoder[(A, B, C, D)] = new Decoder[(A, B, C, D)] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B, C, D)] = {
+      //noinspection VariablePatternShadow
+      aDecoder
+        .decode(buffer, readOffset)
+        .andThen { case (a, buffer, readOffset) =>
+          bDecoder
+            .decode(buffer, readOffset)
+            .andThen { case (b, buffer, readOffset) =>
+              cDecoder
+                .decode(buffer, readOffset)
+                .andThen { case (c, buffer, readOffset) =>
+                  dDecoder
+                    .decode(buffer, readOffset)
+                    .andThen { case (d, buffer, readOffset) =>
+                      Decoded((a, b, c, d), buffer, readOffset)
+                    }
+                }
+            }
+        }
+    }
+  }
+}
+
+trait Decoder[A] { self =>
   def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A]
+
+  def trampolined: Decoder[A] = Decoder.trampoliningDecoder(self)
+
+  def zip[B](bDecoder: Decoder[B]): Decoder[(A, B)] = Decoder.zip(self, bDecoder)
 }
 
 // TODO: rewrite DecodeResult to following pattern
@@ -59,10 +150,10 @@ case class DecodeFailure[A](error: String) extends DecodeResult[A] {
   override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = DecodeFailure(error)
 }
 
-case class DecodeUnsufficientData[A](continuationDecoder: Decoder[A]) extends DecodeResult[A] {
+case class DecodeInsufficientData[A](continuationDecoder: Decoder[A]) extends DecodeResult[A] {
   override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
     // Return a decoder that can continue later, first handling the given function
-    DecodeUnsufficientData(new Decoder[B] {
+    DecodeInsufficientData(new Decoder[B] {
       override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] = {
         continuationDecoder.decode(buffer, readOffset).andThen(function)
       }
@@ -74,35 +165,6 @@ case class DecodeUnsufficientData[A](continuationDecoder: Decoder[A]) extends De
 case class Continue[A](private val thunk: () => DecodeResult[A]) extends DecodeResult[A] {
   override def andThen[B](function: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
     thunk().andThen(function)
-  }
-}
-
-object Decoder {
-  /**
-    * A [[Decoder]] that only returns [[Decoded]], [[DecodeFailure]] or [[DecodeUnsufficientData]]
-    * (and ''not'' [[Continue]]) results.
-    * It does this by replacing a [[Continue]] with the result of executing its embedded thunk.
-    *
-    * See [[http://blog.richdougherty.com/2009/04/tail-calls-tailrec-and-trampolines.html]] for inspiration.
-    *
-    * @param decoder the decoder to wrap
-    * @tparam A type of expected decode result
-    * @return a new decoder
-    */
-  def trampoliningDecoder[A](decoder: Decoder[A]): Decoder[A] = {
-    new Decoder[A] {
-      def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
-        trampoline(decoder.decode(buffer, readOffset))
-      }
-    }
-  }
-
-  @tailrec
-  private def trampoline[A](decodeResult: DecodeResult[A]): DecodeResult[A] = {
-    decodeResult match {
-      case Continue(thunk) => trampoline(thunk())
-      case result => result
-    }
   }
 }
 

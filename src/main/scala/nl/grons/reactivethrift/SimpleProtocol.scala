@@ -1,13 +1,18 @@
 package nl.grons.reactivethrift
 
+import java.nio.charset.StandardCharsets
+
 import nl.grons.reactivethrift.Protocol.TMessage
 import uk.co.real_logic.agrona.DirectBuffer
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
 object SimpleProtocol extends Protocol {
 
+  private val CompactProtocolId : Byte = 0x82.toByte
+  private val CompactProtocolVersion: Byte = 1
+
   override def structDecoder[A](structBuilder: () => StructBuilder): Decoder[A] = {
-    Decoder.trampoliningDecoder(new StructDecoder(structBuilder))
+    new StructDecoder(structBuilder).trampolined
   }
 
   // Simple decoders
@@ -27,7 +32,7 @@ object SimpleProtocol extends Protocol {
         val value = buffer.getByte(readOffset)
         Decoded(value, buffer, readOffset + 1)
       } else {
-        DecodeUnsufficientData(this)
+        DecodeInsufficientData(this)
       }
     }
   }
@@ -41,7 +46,7 @@ object SimpleProtocol extends Protocol {
       } else {
         val availableBytes = Array.ofDim[Byte](availableByteCount)
         buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-        DecodeUnsufficientData(new Int16ContinuationDecoder(availableBytes))
+        DecodeInsufficientData(new Int16ContinuationDecoder(availableBytes))
       }
     }
 
@@ -54,7 +59,7 @@ object SimpleProtocol extends Protocol {
           val value = new UnsafeBuffer(concatenatedData).getShort(0)
           Decoded(value, buffer, newDataReadOffset)
         } else {
-          DecodeUnsufficientData(new Int16ContinuationDecoder(concatenatedData))
+          DecodeInsufficientData(new Int16ContinuationDecoder(concatenatedData))
         }
       }
     }
@@ -69,7 +74,7 @@ object SimpleProtocol extends Protocol {
       } else {
         val availableBytes = Array.ofDim[Byte](availableByteCount)
         buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-        DecodeUnsufficientData(new Int32ContinuationDecoder(availableBytes))
+        DecodeInsufficientData(new Int32ContinuationDecoder(availableBytes))
       }
     }
 
@@ -82,7 +87,7 @@ object SimpleProtocol extends Protocol {
           val value = new UnsafeBuffer(concatenatedData).getInt(0)
           Decoded(value, buffer, newDataReadOffset)
         } else {
-          DecodeUnsufficientData(new Int32ContinuationDecoder(concatenatedData))
+          DecodeInsufficientData(new Int32ContinuationDecoder(concatenatedData))
         }
       }
     }
@@ -97,7 +102,7 @@ object SimpleProtocol extends Protocol {
       } else {
         val availableBytes = Array.ofDim[Byte](availableByteCount)
         buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-        DecodeUnsufficientData(new Int64ContinuationDecoder(availableBytes))
+        DecodeInsufficientData(new Int64ContinuationDecoder(availableBytes))
       }
     }
 
@@ -110,7 +115,7 @@ object SimpleProtocol extends Protocol {
           val value = new UnsafeBuffer(concatenatedData).getLong(0)
           Decoded(value, buffer, newDataReadOffset)
         } else {
-          DecodeUnsufficientData(new Int64ContinuationDecoder(concatenatedData))
+          DecodeInsufficientData(new Int64ContinuationDecoder(concatenatedData))
         }
       }
     }
@@ -137,22 +142,37 @@ object SimpleProtocol extends Protocol {
         .decode(buffer, readOffset)
         .andThen { case (length, buffer, readOffset) =>
           val data = Array.ofDim[Byte](length)
-          val availableByteCount = buffer.capacity() - readOffset
-          val copyCount = Math.min(length, availableByteCount)
-          buffer.getBytes(readOffset, data, 0, copyCount)
-          if (copyCount == length) {
-            Decoded(data, buffer, readOffset + copyCount)
-          } else {
-            DecodeUnsufficientData(new BinaryContinuationDecoder(length, copyCount, data))
-          }
+          doDecode(length, 0, data, buffer, readOffset)
         }
     }
 
     private class BinaryContinuationDecoder(length: Int, readCount: Int, data: Array[Byte]) extends Decoder[Array[Byte]] {
       override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] = {
-        val availableByteCount = buffer.capacity() - readOffset
-
+        doDecode(length, readCount, data, buffer, readOffset)
       }
+    }
+
+    private def doDecode(length: Int, readCount: Int, data: Array[Byte], buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] with Product with Serializable = {
+      val availableByteCount = buffer.capacity() - readOffset
+      val copyCount = Math.min(length - readCount, availableByteCount)
+      buffer.getBytes(readOffset, data, readCount, copyCount)
+      val newReadCount = readCount + copyCount
+      if (newReadCount == length) {
+        Decoded(data, buffer, readOffset + copyCount)
+      } else {
+        DecodeInsufficientData(new BinaryContinuationDecoder(length, newReadCount, data))
+      }
+    }
+  }
+
+  object StringDecoder extends Decoder[String] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[String] = {
+      //noinspection VariablePatternShadow
+      BinaryDecoder
+        .decode(buffer, readOffset)
+        .andThen { case (binary, buffer, readOffset) =>
+          Decoded(new String(binary, StandardCharsets.UTF_8), buffer, readOffset)
+        }
     }
   }
 
@@ -171,72 +191,21 @@ object SimpleProtocol extends Protocol {
   //  writeVarint32(message.seqid)
   //  writeString(message.name)
 
-  class MessageDecoder extends Decoder {
+  class MessageDecoder extends Decoder[TMessage] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
-      Int8Decoder
+      //noinspection VariablePatternShadow
+      Decoder.zip4(Int8Decoder, Int8Decoder, Int32Decoder, StringDecoder)
         .decode(buffer, readOffset)
-        .andThen { case (protocolId, buffer, readOffset) =>
-            Int8Decoder
-              .decode(buffer, readOffset)
-              .andThen { case (versionInfo, buffer, readOffset) =>
-                  Int32Decoder
-                    .decode(buffer, readOffset)
-                    .andThen { case (sequenceId, buffer, readOffset) =>
-
-                    }
-              }
-        }
-
-      val availableByteCount = buffer.capacity() - readOffset
-      if (availableByteCount >= 1) {
-        val byte1 = buffer.getByte(readOffset) & 0xff
-        // First byte looks as follows:
-        //  76543210
-        // +--------+
-        // |ddddtttt|
-        // +--------+
-        // d = field id delta (unsigned 4 bits), >0, for the short form, 0 for stop field and extended form
-        // t = field type id (4 bits), 0 for stop field
-        //
-        if (byte1 == 0) {
-          Decoded(FieldHeader(0, 0), buffer, readOffset + 1)
-
-        } else {
-          val fieldIdDelta = (byte1 >> 4).toShort
-          val fieldTypeId = byte1 & 0x0F
-
-          if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
-            DecodeFailure("Not supported type id: " + fieldTypeId)
-
-          } else if (fieldIdDelta != 0) {
-            // Short form (1 byte).
-            val fieldId = (previousFieldId + fieldIdDelta).toShort
-            Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 1)
-
+        .andThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
+          val version = versionInfo & 0x1F
+          val messageType = ((versionInfo  & 0xE0) >> 5).toByte
+          if (protocolId != CompactProtocolId || version != CompactProtocolVersion) {
+            DecodeFailure(s"Received Message with unsupported protocol $protocolId or version $version, " +
+              s"supported are protocol $CompactProtocolId version $CompactProtocolVersion")
           } else {
-            // Extended form (3 bytes).
-            //  76543210 76543210 76543210
-            // +--------+--------+--------+
-            // |0000tttt|iiiiiiii|iiiiiiii|
-            // +--------+--------+--------+
-            // t = field type id (4 bits)
-            // i = field id (signed 16 bits)
-            //
-            if (availableByteCount >= 3) {
-              val fieldId = buffer.getShort(readOffset + 1)
-              Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 3)
-
-            } else {
-              val availableBytes = Array.ofDim[Byte](availableByteCount)
-              buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-              DecodeUnsufficientData(new FieldHeaderContinuationDecoder(availableBytes))
-            }
+            Decoded(TMessage(name, messageType, sequenceId), buffer, readOffset)
           }
         }
-      } else {
-        // no data available at all
-        DecodeUnsufficientData(this)
-      }
     }
   }
 
@@ -290,13 +259,13 @@ object SimpleProtocol extends Protocol {
             } else {
               val availableBytes = Array.ofDim[Byte](availableByteCount)
               buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-              DecodeUnsufficientData(new FieldHeaderContinuationDecoder(availableBytes))
+              DecodeInsufficientData(new FieldHeaderContinuationDecoder(availableBytes))
             }
           }
         }
       } else {
         // no data available at all
-        DecodeUnsufficientData(this)
+        DecodeInsufficientData(this)
       }
     }
   }
@@ -316,7 +285,7 @@ object SimpleProtocol extends Protocol {
           Decoded(FieldHeader(fieldId, fieldTypeId), buffer, newDataReadOffset)
         }
       } else {
-        DecodeUnsufficientData(new FieldHeaderContinuationDecoder(concatenatedData))
+        DecodeInsufficientData(new FieldHeaderContinuationDecoder(concatenatedData))
       }
     }
   }
@@ -362,7 +331,7 @@ object SimpleProtocol extends Protocol {
                   case 12 => structBuilder.readStruct(fieldId, fieldValue)
                 }
 
-                // Initiate a bounce on the trampoline when we reached our stack-frames budget
+                // Initiate a bounce on the trampoline when we used up the stack-frame budget
                 if (stackDepth < 100) {
                   this.decodeNextField(buffer, readOffset, stackDepth + 1, structBuilder, fieldHeader.fieldId)
                 } else {
@@ -404,7 +373,7 @@ object SimpleProtocol extends Protocol {
       val availableByteCount = buffer.capacity() - readOffset
       if (availableByteCount < 1) {
         // no data available at all
-        DecodeUnsufficientData(this)
+        DecodeInsufficientData(this)
       } else {
         val byte1 = buffer.getByte(readOffset) & 0xFF
         // First byte looks as follows:
@@ -445,7 +414,7 @@ object SimpleProtocol extends Protocol {
           } else {
             val availableBytes = Array.ofDim[Byte](availableByteCount)
             buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-            DecodeUnsufficientData(new ListSetHeaderContinuationDecoder(availableBytes))
+            DecodeInsufficientData(new ListSetHeaderContinuationDecoder(availableBytes))
           }
         }
       }
@@ -467,7 +436,7 @@ object SimpleProtocol extends Protocol {
             Decoded(ListSetHeader(size, itemTypeId), buffer, newDataReadOffset)
           }
         } else {
-          DecodeUnsufficientData(new ListSetHeaderContinuationDecoder(concatenatedData))
+          DecodeInsufficientData(new ListSetHeaderContinuationDecoder(concatenatedData))
         }
       }
     }
@@ -500,7 +469,7 @@ object SimpleProtocol extends Protocol {
           .andThen { (itemValue, buffer, readOffset) =>
             listBuilder.readItem(itemValue.asInstanceOf[A])
 
-            // Initiate a bounce on the trampoline when we reached our stack-frames budget
+            // Initiate a bounce on the trampoline when we used up the stack-frame budget
             if (stackDepth < 50) {
               this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder)
             } else {
