@@ -1,5 +1,6 @@
 package nl.grons.reactivethrift
 
+import nl.grons.reactivethrift.Protocol.TMessage
 import uk.co.real_logic.agrona.DirectBuffer
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
@@ -114,6 +115,132 @@ object SimpleProtocol extends Protocol {
       }
     }
   }
+
+  //  def concatData(previousData: Array[Byte], newData: DirectBuffer, readOffset: Int, needed: Int): (Array[Byte], Int) = {
+//    val resultSize = Math.min(needed, previousData.length + newData.capacity() - readOffset)
+//    val concatenatedData = Array.ofDim[Byte](resultSize)
+//    System.arraycopy(previousData, 0, concatenatedData, 0, previousData.length)
+//    val bytesFromNewData = resultSize - previousData.length
+//    newData.getBytes(readOffset, concatenatedData, previousData.length, bytesFromNewData)
+//    (concatenatedData, readOffset + bytesFromNewData)
+//  }
+
+  //
+  // Protocol:
+  // * Int32 with length of array
+  // * the bytes
+  //
+  object BinaryDecoder extends Decoder[Array[Byte]] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] = {
+      //noinspection VariablePatternShadow
+      Int32Decoder
+        .decode(buffer, readOffset)
+        .andThen { case (length, buffer, readOffset) =>
+          val data = Array.ofDim[Byte](length)
+          val availableByteCount = buffer.capacity() - readOffset
+          val copyCount = Math.min(length, availableByteCount)
+          buffer.getBytes(readOffset, data, 0, copyCount)
+          if (copyCount == length) {
+            Decoded(data, buffer, readOffset + copyCount)
+          } else {
+            DecodeUnsufficientData(new BinaryContinuationDecoder(length, copyCount, data))
+          }
+        }
+    }
+
+    private class BinaryContinuationDecoder(length: Int, readCount: Int, data: Array[Byte]) extends Decoder[Array[Byte]] {
+      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] = {
+        val availableByteCount = buffer.capacity() - readOffset
+
+      }
+    }
+  }
+
+  // Message decoder
+
+  // Compact protocol:
+  //   private val PROTOCOL_ID : Byte = 0x82.toByte
+  //   private val VERSION: Byte = 1
+  //   private val VERSION_MASK: Byte = 0x1f
+  //   private val TYPE_MASK: Byte = 0xE0.toByte
+  //   private val TYPE_BITS: Byte = 0x07
+  //   private val TYPE_SHIFT_AMOUNT: Int = 5
+  //
+  //  writeByteDirect(PROTOCOL_ID)
+  //  writeByteDirect((VERSION & VERSION_MASK) | ((message.`type` << TYPE_SHIFT_AMOUNT) & TYPE_MASK))
+  //  writeVarint32(message.seqid)
+  //  writeString(message.name)
+
+  class MessageDecoder extends Decoder {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
+      Int8Decoder
+        .decode(buffer, readOffset)
+        .andThen { case (protocolId, buffer, readOffset) =>
+            Int8Decoder
+              .decode(buffer, readOffset)
+              .andThen { case (versionInfo, buffer, readOffset) =>
+                  Int32Decoder
+                    .decode(buffer, readOffset)
+                    .andThen { case (sequenceId, buffer, readOffset) =>
+
+                    }
+              }
+        }
+
+      val availableByteCount = buffer.capacity() - readOffset
+      if (availableByteCount >= 1) {
+        val byte1 = buffer.getByte(readOffset) & 0xff
+        // First byte looks as follows:
+        //  76543210
+        // +--------+
+        // |ddddtttt|
+        // +--------+
+        // d = field id delta (unsigned 4 bits), >0, for the short form, 0 for stop field and extended form
+        // t = field type id (4 bits), 0 for stop field
+        //
+        if (byte1 == 0) {
+          Decoded(FieldHeader(0, 0), buffer, readOffset + 1)
+
+        } else {
+          val fieldIdDelta = (byte1 >> 4).toShort
+          val fieldTypeId = byte1 & 0x0F
+
+          if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
+            DecodeFailure("Not supported type id: " + fieldTypeId)
+
+          } else if (fieldIdDelta != 0) {
+            // Short form (1 byte).
+            val fieldId = (previousFieldId + fieldIdDelta).toShort
+            Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 1)
+
+          } else {
+            // Extended form (3 bytes).
+            //  76543210 76543210 76543210
+            // +--------+--------+--------+
+            // |0000tttt|iiiiiiii|iiiiiiii|
+            // +--------+--------+--------+
+            // t = field type id (4 bits)
+            // i = field id (signed 16 bits)
+            //
+            if (availableByteCount >= 3) {
+              val fieldId = buffer.getShort(readOffset + 1)
+              Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 3)
+
+            } else {
+              val availableBytes = Array.ofDim[Byte](availableByteCount)
+              buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
+              DecodeUnsufficientData(new FieldHeaderContinuationDecoder(availableBytes))
+            }
+          }
+        }
+      } else {
+        // no data available at all
+        DecodeUnsufficientData(this)
+      }
+    }
+  }
+
+  // Field header decoder
 
   case class FieldHeader(fieldId: Short, fieldTypeId: Int) {
     def isStopField = fieldTypeId == 0
