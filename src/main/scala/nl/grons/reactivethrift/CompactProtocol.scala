@@ -273,7 +273,7 @@ object CompactProtocol extends Protocol {
   }
 
   val DoubleDecoder: Decoder[Double] =
-    Int64Decoder.map(java.lang.Double.longBitsToDouble
+    Int64Decoder.map(java.lang.Double.longBitsToDouble)
 
   //
   // Protocol:
