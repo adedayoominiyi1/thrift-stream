@@ -15,7 +15,7 @@ class SimpleProtocolSpec extends FunSpec {
       buffer.putInt(writeIndex, 2016); writeIndex += 4
       buffer.putInt(writeIndex, 0); writeIndex += 1
 
-      val bookDecoder: Decoder[Book] = SimpleProtocol.structDecoder(() => new BookStructBuilder())
+      val bookDecoder: Decoder[Book] = CompactProtocol.structDecoder(() => new BookStructBuilder())
 
       val result = bookDecoder.decode(buffer, 0)
       result shouldBe a [Decoded[_]]

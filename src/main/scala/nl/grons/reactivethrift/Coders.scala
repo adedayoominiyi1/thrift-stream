@@ -123,6 +123,20 @@ object Decoder {
 trait Decoder[A] { self =>
   def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A]
 
+  /**
+    * Creates a new decoder by applying function `f` to the decode result of this decoder.
+    */
+  def map[B](f: A => B): Decoder[B] = new Decoder[B] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] = {
+      //noinspection VariablePatternShadow
+      self
+        .decode(buffer, readOffset)
+        .andThen { case (a, buffer, readOffset) =>
+          Decoded(f(a), buffer, readOffset)
+        }
+    }
+  }
+
   def trampolined: Decoder[A] = Decoder.trampoliningDecoder(self)
 
   def zip[B](bDecoder: Decoder[B]): Decoder[(A, B)] = Decoder.zip(self, bDecoder)
