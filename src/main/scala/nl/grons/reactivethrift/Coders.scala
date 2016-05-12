@@ -62,7 +62,7 @@ object Decoder {
     }
   }
 
-  def zip[A, B](aDecoder: Decoder[A], bDecoder: Decoder[B]): Decoder[(A, B)] = new Decoder[(A, B)] {
+  def product[A, B](aDecoder: Decoder[A], bDecoder: Decoder[B]): Decoder[(A, B)] = new Decoder[(A, B)] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B)] = {
       //noinspection VariablePatternShadow
       aDecoder
@@ -77,7 +77,7 @@ object Decoder {
     }
   }
 
-  def zip3[A, B, C](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C]): Decoder[(A, B, C)] = new Decoder[(A, B, C)] {
+  def product3[A, B, C](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C]): Decoder[(A, B, C)] = new Decoder[(A, B, C)] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B, C)] = {
       //noinspection VariablePatternShadow
       aDecoder
@@ -96,7 +96,7 @@ object Decoder {
     }
   }
 
-  def zip4[A, B, C, D](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C], dDecoder: Decoder[D]): Decoder[(A, B, C, D)] = new Decoder[(A, B, C, D)] {
+  def product4[A, B, C, D](aDecoder: Decoder[A], bDecoder: Decoder[B], cDecoder: Decoder[C], dDecoder: Decoder[D]): Decoder[(A, B, C, D)] = new Decoder[(A, B, C, D)] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[(A, B, C, D)] = {
       //noinspection VariablePatternShadow
       aDecoder
@@ -139,7 +139,7 @@ trait Decoder[A] { self =>
 
   def trampolined: Decoder[A] = Decoder.trampoliningDecoder(self)
 
-  def zip[B](bDecoder: Decoder[B]): Decoder[(A, B)] = Decoder.zip(self, bDecoder)
+  def product[B](bDecoder: Decoder[B]): Decoder[(A, B)] = Decoder.product(self, bDecoder)
 }
 
 // TODO: rewrite DecodeResult to following pattern

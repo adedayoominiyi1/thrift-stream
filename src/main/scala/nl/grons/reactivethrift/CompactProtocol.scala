@@ -337,7 +337,7 @@ object CompactProtocol extends Protocol {
   class MessageDecoder extends Decoder[TMessage] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
       //noinspection VariablePatternShadow
-      Decoder.zip4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
+      Decoder.product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
         .decode(buffer, readOffset)
         .andThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
           val version = versionInfo & 0x1F
