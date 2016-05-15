@@ -1,6 +1,8 @@
 package nl.grons.reactivethrift
 
-import nl.grons.reactivethrift.example.{BookStructBuilder, Book}
+import nl.grons.reactivethrift.decoders.DecodeResult.Decoded
+import nl.grons.reactivethrift.decoders.Decoder
+import nl.grons.reactivethrift.example.{Book, BookStructBuilder}
 import org.scalatest.FunSpec
 import org.scalatest.Matchers._
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
@@ -21,7 +23,7 @@ class SimpleProtocolSpec extends FunSpec {
       result shouldBe a [Decoded[_]]
       val bookResult = result.asInstanceOf[Decoded[Book]]
       bookResult.value.year shouldBe 2016
-      bookResult.notConsumedBufferReadOffset shouldBe writeIndex
+      bookResult.nextReadOffset shouldBe writeIndex
     }
 
   }

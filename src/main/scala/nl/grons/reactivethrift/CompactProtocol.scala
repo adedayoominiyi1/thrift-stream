@@ -3,6 +3,8 @@ package nl.grons.reactivethrift
 import java.nio.charset.StandardCharsets
 
 import nl.grons.reactivethrift.Protocol.TMessage
+import nl.grons.reactivethrift.decoders.DecodeResult._
+import nl.grons.reactivethrift.decoders._
 import uk.co.real_logic.agrona.DirectBuffer
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
@@ -15,265 +17,11 @@ object CompactProtocol extends Protocol {
     new StructDecoder(structBuilder).trampolined
   }
 
-  // Simple decoders
+  val BooleanTrueDecoder: Decoder[Boolean] =
+    Decoder.unit(true)
 
-  object BooleanTrueDecoder extends Decoder[Boolean] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Boolean] = Decoded(true, buffer, readOffset)
-  }
-
-  object BooleanFalseDecoder extends Decoder[Boolean] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Boolean] = Decoded(false, buffer, readOffset)
-  }
-
-  object Int8Decoder extends Decoder[Byte] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Byte] = {
-      val availableByteCount = buffer.capacity() - readOffset
-      if (availableByteCount >= 1) {
-        val value = buffer.getByte(readOffset)
-        Decoded(value, buffer, readOffset + 1)
-      } else {
-        DecodeInsufficientData(this)
-      }
-    }
-  }
-
-  // Variable size int decoders
-
-  /**
-    * Read an i32 from the wire as a varint. The MSB of each byte is set
-    * if there is another byte to follow. This can read up to 5 bytes.
-    */
-  object VarInt32Decoder extends Decoder[Int] {
-    /** True when `b` has the most significant bit set, false when unset. */
-    @inline private def msb(b: Byte): Boolean = (b & 0x80) == 0x80
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
-      val availableByteCount = buffer.capacity() - readOffset
-      if (availableByteCount >= 5) {
-        // All bytes are available, the fast path
-        var result = 0
-        var shift = 0
-        var offset = -1
-        var b: Byte = 0
-        // read more bytes while the MSB is set
-        do {
-          offset += 1
-          b = buffer.getByte(readOffset + offset)
-          result |= (b & 0x7F) << shift
-          shift += 7
-        } while (msb(b))
-        Decoded(result, buffer, readOffset + offset)
-
-      } else if (availableByteCount == 0) {
-        // No bytes available at all
-        DecodeInsufficientData(this)
-
-      } else {
-        // Some bytes available, the slow path...
-        val (result, shift, complete, endOffset) = decodeVarInt32(0, 0, buffer, readOffset)
-        if (complete) {
-          Decoded(result, buffer, endOffset)
-        } else {
-          DecodeInsufficientData(new VarInt32ContinuationDecoder(result, shift))
-        }
-      }
-    }
-
-    private class VarInt32ContinuationDecoder(previousResult: Int, previousShift: Int) extends Decoder[Int] {
-      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
-        val (result, shift, complete, endOffset) = decodeVarInt32(previousResult, previousShift, buffer, readOffset)
-        if (complete) {
-          Decoded(result, buffer, endOffset)
-        } else {
-          DecodeInsufficientData(new VarInt32ContinuationDecoder(result, shift))
-        }
-      }
-    }
-
-    private def decodeVarInt32(previousResult: Int, previousShift: Int, buffer: DirectBuffer, readOffset: Int): (Int, Int, Boolean, Int) = {
-      val (msbBytes, followingBytes) = Range(readOffset, Math.min(buffer.capacity(), readOffset + 5))
-        .map(buffer.getByte)
-        .span(msb)
-      val varIntBytes = msbBytes ++ followingBytes.take(1)
-      val varIntComplete = followingBytes.nonEmpty
-      val (nextResult, nextShift) = varIntBytes.foldLeft((previousResult, previousShift)) { case ((result, shift), b) =>
-        (result | (b & 0x7F) << shift, shift + 7)
-      }
-      val endOffset = readOffset + varIntBytes.length
-      (nextResult, nextShift, varIntComplete, endOffset)
-    }
-  }
-
-  val ZigZagInt32Decoder: Decoder[Int] = {
-    @inline def zigzagToInt(n: Int): Int = (n >>> 1) ^ -(n & 1)
-    VarInt32Decoder.map(zigzagToInt)
-  }
-
-  val VarInt16Decoder: Decoder[Short] =
-    VarInt32Decoder.map(_.toShort)
-
-  val ZigZagInt16Decoder: Decoder[Short] =
-    ZigZagInt32Decoder.map(_.toShort)
-
-  /**
-    * Read an i64 from the wire as a varint. The MSB of each byte is set
-    * if there is another byte to follow. This can read up to 10 bytes.
-    */
-  object VarInt64Decoder extends Decoder[Long] {
-    /** True when `b` has the most significant bit set, false when unset. */
-    @inline private def msb(b: Byte): Boolean = (b & 0x80) == 0x80
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
-      val availableByteCount = buffer.capacity() - readOffset
-      if (availableByteCount >= 10) {
-        // All bytes are available
-        var result = 0L
-        var shift = 0
-        var offset = -1
-        var b: Byte = 0
-        // read more bytes while the MSB is set
-        do {
-          offset += 1
-          b = buffer.getByte(readOffset + offset)
-          result |= (b & 0x7F).toLong << shift
-          shift += 7
-        } while (msb(b))
-        Decoded(result, buffer, readOffset + offset)
-
-      } else if (availableByteCount == 0) {
-        // No bytes available at all
-        DecodeInsufficientData(this)
-
-      } else {
-        // Some bytes available, the slow path...
-        val (result, shift, complete, endOffset) = decodeVarInt64(0, 0, buffer, readOffset)
-        if (complete) {
-          Decoded(result, buffer, endOffset)
-        } else {
-          DecodeInsufficientData(new VarInt64ContinuationDecoder(result, shift))
-        }
-      }
-    }
-
-    private class VarInt64ContinuationDecoder(previousResult: Long, previousShift: Int) extends Decoder[Long] {
-      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
-        val (result, shift, complete, endOffset) = decodeVarInt64(previousResult, previousShift, buffer, readOffset)
-        if (complete) {
-          Decoded(result, buffer, endOffset)
-        } else {
-          DecodeInsufficientData(new VarInt64ContinuationDecoder(result, shift))
-        }
-      }
-    }
-
-    private def decodeVarInt64(previousResult: Long, previousShift: Int, buffer: DirectBuffer, readOffset: Int): (Long, Int, Boolean, Int) = {
-      val (msbBytes, followingBytes) = Range(readOffset, Math.min(buffer.capacity(), readOffset + 10))
-        .map(buffer.getByte)
-        .span(msb)
-      val varIntBytes = msbBytes ++ followingBytes.take(1)
-      val varIntComplete = followingBytes.nonEmpty
-      val (nextResult, nextShift) = varIntBytes.foldLeft((previousResult, previousShift)) { case ((result, shift), b) =>
-        (result | (b & 0x7F).toLong << shift, shift + 7)
-      }
-      val endOffset = readOffset + varIntBytes.length
-      (nextResult, nextShift, varIntComplete, endOffset)
-    }
-  }
-
-  val ZigZagInt64Decoder: Decoder[Long] = {
-    @inline def zigzagToLong(n: Long): Long = (n >>> 1) ^ -(n & 1)
-    VarInt64Decoder.map(zigzagToLong)
-  }
-
-  // Fixed size int decoders
-
-//  object Int16Decoder extends Decoder[Short] {
-//    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Short] = {
-//      val availableByteCount = buffer.capacity() - readOffset
-//      if (availableByteCount >= 2) {
-//        val value = buffer.getShort(readOffset)
-//        Decoded(value, buffer, readOffset + 2)
-//      } else {
-//        val availableBytes = Array.ofDim[Byte](availableByteCount)
-//        buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-//        DecodeInsufficientData(new Int16ContinuationDecoder(availableBytes))
-//      }
-//    }
-//
-//    private class Int16ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Short] {
-//      require(previousData.length < 2)
-//
-//      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Short] = {
-//        val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 2)
-//        if (concatenatedData.length == 2) {
-//          val value = new UnsafeBuffer(concatenatedData).getShort(0)
-//          Decoded(value, buffer, newDataReadOffset)
-//        } else {
-//          DecodeInsufficientData(new Int16ContinuationDecoder(concatenatedData))
-//        }
-//      }
-//    }
-//  }
-//
-//  object Int32Decoder extends Decoder[Int] {
-//    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
-//      val availableByteCount = buffer.capacity() - readOffset
-//      if (availableByteCount >= 4) {
-//        val value = buffer.getInt(readOffset)
-//        Decoded(value, buffer, readOffset + 4)
-//      } else {
-//        val availableBytes = Array.ofDim[Byte](availableByteCount)
-//        buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-//        DecodeInsufficientData(new Int32ContinuationDecoder(availableBytes))
-//      }
-//    }
-//
-//    private class Int32ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Int] {
-//      require(previousData.length < 4)
-//
-//      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
-//        val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 4)
-//        if (concatenatedData.length == 4) {
-//          val value = new UnsafeBuffer(concatenatedData).getInt(0)
-//          Decoded(value, buffer, newDataReadOffset)
-//        } else {
-//          DecodeInsufficientData(new Int32ContinuationDecoder(concatenatedData))
-//        }
-//      }
-//    }
-//  }
-//
-
-  private object Int64Decoder extends Decoder[Long] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
-      val availableByteCount = buffer.capacity() - readOffset
-      if (availableByteCount >= 8) {
-        val value = buffer.getLong(readOffset)
-        Decoded(value, buffer, readOffset + 8)
-      } else {
-        val availableBytes = Array.ofDim[Byte](availableByteCount)
-        buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-        DecodeInsufficientData(new Int64ContinuationDecoder(availableBytes))
-      }
-    }
-
-    private class Int64ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Long] {
-      require(previousData.length < 8)
-
-      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
-        val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 8)
-        if (concatenatedData.length == 8) {
-          val value = new UnsafeBuffer(concatenatedData).getLong(0)
-          Decoded(value, buffer, newDataReadOffset)
-        } else {
-          DecodeInsufficientData(new Int64ContinuationDecoder(concatenatedData))
-        }
-      }
-    }
-  }
-
-  val DoubleDecoder: Decoder[Double] =
-    Int64Decoder.map(java.lang.Double.longBitsToDouble)
+  val BooleanFalseDecoder: Decoder[Boolean] =
+    Decoder.unit(false)
 
   //
   // Protocol:
@@ -379,7 +127,7 @@ object CompactProtocol extends Protocol {
           val fieldIdDelta = (byte1 >> 4).toShort
           val fieldTypeId = byte1 & 0x0F
 
-          if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
+          if (isInvalidTypeId(fieldTypeId)) {
             DecodeFailure("Not supported type id: " + fieldTypeId)
 
           } else if (fieldIdDelta != 0) {
@@ -423,7 +171,7 @@ object CompactProtocol extends Protocol {
         val concatenatedBuffer = new UnsafeBuffer(concatenatedData)
         val fieldTypeId = concatenatedBuffer.getByte(0) & 0x0f
         val fieldId = concatenatedBuffer.getShort(1)
-        if (DecoderUtil.isInvalidTypeId(fieldTypeId)) {
+        if (isInvalidTypeId(fieldTypeId)) {
           DecodeFailure("Not supported field type id: " + fieldTypeId)
         } else {
           Decoded(FieldHeader(fieldId, fieldTypeId), buffer, newDataReadOffset)
@@ -623,28 +371,5 @@ object CompactProtocol extends Protocol {
 
   // Util
 
-  private object DecoderUtil {
-    def isInvalidTypeId(typeId: Int): Boolean = typeId < 1 || typeId > 12
-
-    /**
-      * Concatenates the bytes in 'previousData' with bytes from 'newData' such that the result is 'needed' bytes
-      * long (if possible).
-      *
-      * @param previousData the previously collected bytes
-      * @param newData      the new data to concatenate to previousData
-      * @param readOffset   the read offset in newData
-      * @param needed       the desired size of the result
-      * @return the concatenated data (size is between `previousData.length` and 'needed' bytes, both inclusive),
-      *         and the new 'readOffset' in newData
-      */
-    def concatData(previousData: Array[Byte], newData: DirectBuffer, readOffset: Int, needed: Int): (Array[Byte], Int) = {
-      val resultSize = Math.min(needed, previousData.length + newData.capacity() - readOffset)
-      val concatenatedData = Array.ofDim[Byte](resultSize)
-      System.arraycopy(previousData, 0, concatenatedData, 0, previousData.length)
-      val bytesFromNewData = resultSize - previousData.length
-      newData.getBytes(readOffset, concatenatedData, previousData.length, bytesFromNewData)
-      (concatenatedData, readOffset + bytesFromNewData)
-    }
-  }
-
+  private def isInvalidTypeId(typeId: Int): Boolean = typeId < 1 || typeId > 12
 }
