@@ -31,7 +31,7 @@ object Int16Decoder extends Decoder[Short] {
       Decoded(value, buffer, readOffset + 2)
     } else {
       BytesDecoder(2)
-        .map(bytes => (bytes(0) << 8 | bytes(1)).toShort)
+        .map(bytes => ((bytes(0) & 0xff) << 8 | (bytes(1) & 0xff)).toShort)
         .decode(buffer, readOffset)
     }
   }

@@ -23,7 +23,8 @@ libraryDependencies <++= (scalaVersion) { sv =>
   Seq(
     "uk.co.real-logic" % "Agrona" % "0.4.10",
     "org.scodec" %% "scodec-bits" % "1.0.12",
-    "org.scalatest" %% "scalatest" % "2.2.4" % "test",
+    "org.scalatest" %% "scalatest" % "2.2.6" % "test",
+    "org.scalacheck" %% "scalacheck" % "1.12.5" % "test",
     // Override version that scalatest depends on:
     "org.scala-lang" % "scala-reflect" % sv % "test",
     "org.mockito" % "mockito-all" % "1.10.19" % "test"

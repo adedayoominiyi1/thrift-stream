@@ -18,18 +18,18 @@ object DecodeResult {
 
   case class DecodeInsufficientData[A](continuationDecoder: Decoder[A]) extends DecodeResult[A] {
     override def andThen[B](r: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = {
-      // Return a decoder that can continue later, first handling the given function
+      // Return a decoder that can continue later, first handling the given run function
       DecodeInsufficientData(new Decoder[B] {
-        override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] = {
+        override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] =
           continuationDecoder.decode(buffer, readOffset).andThen(r)
-        }
       })
     }
   }
 
   /** Trampoline continuation. See [[Decoder.trampoliningDecoder]]. */
   case class Continue[A](private val thunk: () => DecodeResult[A]) extends DecodeResult[A] {
-    override def andThen[B](r: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] = thunk().andThen(r)
+    override def andThen[B](r: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] =
+      thunk().andThen(r)
   }
 
 }

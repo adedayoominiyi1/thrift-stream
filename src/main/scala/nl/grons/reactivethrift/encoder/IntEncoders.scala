@@ -39,7 +39,7 @@ object Int16Encoder extends Encoder[Short] {
     } else {
       val bytes = Array[Byte](
         ((value >> 8) & 0xff).toByte,
-        (value        & 0xff).toByte
+        (value         & 0xff).toByte
       )
       BytesEncoder.encode(bytes, buffer, writeOffset)
     }
@@ -51,8 +51,8 @@ object Int16Encoder extends Encoder[Short] {
   *
   * Protocol: 4 bytes, most significant byte first.
   */
-object Int32Encoder extends Encoder[Short] {
-  override def encode(value: Short, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+object Int32Encoder extends Encoder[Int] {
+  override def encode(value: Int, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
     val availableByteCount = buffer.capacity() - writeOffset
     if (availableByteCount >= 4) {
       buffer.putInt(writeOffset, value)
@@ -74,8 +74,8 @@ object Int32Encoder extends Encoder[Short] {
   *
   * Protocol: 8 bytes, most significant byte first.
   */
-object Int64Encoder extends Encoder[Short] {
-  override def encode(value: Short, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+object Int64Encoder extends Encoder[Long] {
+  override def encode(value: Long, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
     val availableByteCount = buffer.capacity() - writeOffset
     if (availableByteCount >= 8) {
       buffer.putLong(writeOffset, value)
