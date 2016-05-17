@@ -2,8 +2,11 @@ package nl.grons.reactivethrift.decoders
 
 import nl.grons.reactivethrift.decoders.DecodeResult._
 import uk.co.real_logic.agrona.DirectBuffer
-import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
+/**
+  * Int8 decoder.
+  * Protocol: just 1 byte.
+  */
 object Int8Decoder extends Decoder[Byte] {
   override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Byte] = {
     val availableByteCount = buffer.capacity() - readOffset
@@ -16,6 +19,10 @@ object Int8Decoder extends Decoder[Byte] {
   }
 }
 
+/**
+  * Int16 decoder.
+  * Protocol: 2 bytes, most significant byte first.
+  */
 object Int16Decoder extends Decoder[Short] {
   override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Short] = {
     val availableByteCount = buffer.capacity() - readOffset
@@ -23,27 +30,17 @@ object Int16Decoder extends Decoder[Short] {
       val value = buffer.getShort(readOffset)
       Decoded(value, buffer, readOffset + 2)
     } else {
-      val availableBytes = Array.ofDim[Byte](availableByteCount)
-      buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-      DecodeInsufficientData(new Int16ContinuationDecoder(availableBytes))
-    }
-  }
-
-  private class Int16ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Short] {
-    require(previousData.length < 2)
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Short] = {
-      val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 2)
-      if (concatenatedData.length == 2) {
-        val value = new UnsafeBuffer(concatenatedData).getShort(0)
-        Decoded(value, buffer, newDataReadOffset)
-      } else {
-        DecodeInsufficientData(new Int16ContinuationDecoder(concatenatedData))
-      }
+      BytesDecoder(2)
+        .map(bytes => (bytes(0) << 8 | bytes(1)).toShort)
+        .decode(buffer, readOffset)
     }
   }
 }
 
+/**
+  * Int32 decoder.
+  * Protocol: 4 bytes, most significant byte first.
+  */
 object Int32Decoder extends Decoder[Int] {
   override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
     val availableByteCount = buffer.capacity() - readOffset
@@ -51,27 +48,17 @@ object Int32Decoder extends Decoder[Int] {
       val value = buffer.getInt(readOffset)
       Decoded(value, buffer, readOffset + 4)
     } else {
-      val availableBytes = Array.ofDim[Byte](availableByteCount)
-      buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-      DecodeInsufficientData(new Int32ContinuationDecoder(availableBytes))
-    }
-  }
-
-  private class Int32ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Int] {
-    require(previousData.length < 4)
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Int] = {
-      val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 4)
-      if (concatenatedData.length == 4) {
-        val value = new UnsafeBuffer(concatenatedData).getInt(0)
-        Decoded(value, buffer, newDataReadOffset)
-      } else {
-        DecodeInsufficientData(new Int32ContinuationDecoder(concatenatedData))
-      }
+      BytesDecoder(4)
+        .map(bytes => bytes(0) << 24 | bytes(1) << 16 | bytes(2) << 8 | bytes(3))
+        .decode(buffer, readOffset)
     }
   }
 }
 
+/**
+  * Int64 decoder.
+  * Protocol: 8 bytes, most significant byte first.
+  */
 object Int64Decoder extends Decoder[Long] {
   override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
     val availableByteCount = buffer.capacity() - readOffset
@@ -79,23 +66,12 @@ object Int64Decoder extends Decoder[Long] {
       val value = buffer.getLong(readOffset)
       Decoded(value, buffer, readOffset + 8)
     } else {
-      val availableBytes = Array.ofDim[Byte](availableByteCount)
-      buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-      DecodeInsufficientData(new Int64ContinuationDecoder(availableBytes))
-    }
-  }
-
-  private class Int64ContinuationDecoder(previousData: Array[Byte]) extends Decoder[Long] {
-    require(previousData.length < 8)
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Long] = {
-      val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 8)
-      if (concatenatedData.length == 8) {
-        val value = new UnsafeBuffer(concatenatedData).getLong(0)
-        Decoded(value, buffer, newDataReadOffset)
-      } else {
-        DecodeInsufficientData(new Int64ContinuationDecoder(concatenatedData))
-      }
+      BytesDecoder(8)
+        .map(bytes =>
+          bytes(0) << 56L | bytes(1) << 48L | bytes(2) << 40L | bytes(3) << 32L |
+          bytes(4) << 24L | bytes(5) << 16L | bytes(6) <<  8L | bytes(7).toLong
+        )
+        .decode(buffer, readOffset)
     }
   }
 }

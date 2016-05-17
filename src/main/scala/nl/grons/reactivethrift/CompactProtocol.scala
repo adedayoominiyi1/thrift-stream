@@ -6,7 +6,6 @@ import nl.grons.reactivethrift.Protocol.TMessage
 import nl.grons.reactivethrift.decoders.DecodeResult._
 import nl.grons.reactivethrift.decoders._
 import uk.co.real_logic.agrona.DirectBuffer
-import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 
 object CompactProtocol extends Protocol {
 
@@ -23,6 +22,8 @@ object CompactProtocol extends Protocol {
   val BooleanFalseDecoder: Decoder[Boolean] =
     Decoder.unit(false)
 
+  private val EmptyByteArray: Array[Byte] = Array.empty
+
   //
   // Protocol:
   // * VarInt32 with length of array
@@ -35,53 +36,30 @@ object CompactProtocol extends Protocol {
         .decode(buffer, readOffset)
         .andThen { case (length, buffer, readOffset) =>
           // TODO: add maximum length check
-          // TODO: consider fast path for zero sized arrays
-          if (length >= 0) {
-            val data = Array.ofDim[Byte](length)
-            doDecode(length, 0, data, buffer, readOffset)
+          if (length == 0) {
+            Decoded(EmptyByteArray, buffer, readOffset)
+          } else if (length > 0) {
+            BytesDecoder(length).decode(buffer, readOffset)
           } else {
             DecodeFailure(s"Negative length: $length")
           }
         }
-    }
-
-    private class BinaryContinuationDecoder(length: Int, readCount: Int, data: Array[Byte]) extends Decoder[Array[Byte]] {
-      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] = {
-        doDecode(length, readCount, data, buffer, readOffset)
-      }
-    }
-
-    private def doDecode(length: Int, readCount: Int, data: Array[Byte], buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] with Product with Serializable = {
-      val availableByteCount = buffer.capacity() - readOffset
-      val copyCount = Math.min(length - readCount, availableByteCount)
-      buffer.getBytes(readOffset, data, readCount, copyCount)
-      val newReadCount = readCount + copyCount
-      if (newReadCount == length) {
-        Decoded(data, buffer, readOffset + copyCount)
-      } else {
-        DecodeInsufficientData(new BinaryContinuationDecoder(length, newReadCount, data))
-      }
     }
   }
 
   val StringDecoder: Decoder[String] =
     BinaryDecoder.map(binary => new String(binary, StandardCharsets.UTF_8))
 
-  // Message decoder
-
-  // Compact protocol:
-  //   private val PROTOCOL_ID : Byte = 0x82.toByte
-  //   private val VERSION: Byte = 1
-  //   private val VERSION_MASK: Byte = 0x1f
-  //   private val TYPE_MASK: Byte = 0xE0.toByte
-  //   private val TYPE_BITS: Byte = 0x07
-  //   private val TYPE_SHIFT_AMOUNT: Int = 5
-  //
-  //  writeByteDirect(PROTOCOL_ID)
-  //  writeByteDirect((VERSION & VERSION_MASK) | ((message.`type` << TYPE_SHIFT_AMOUNT) & TYPE_MASK))
-  //  writeVarint32(message.seqid)
-  //  writeString(message.name)
-
+  /**
+    * TMessage decoder.
+    *
+    * Protocol:
+    * * byte 1: protocol id, fixed to `0x82`
+    * * byte 2: version, fixed to `1` (highest 3 bits) and message type (lowest 5 bits)
+    * * var int32: sequence id
+    * * var int32: length of message name
+    * * bytes: message name
+    */
   class MessageDecoder extends Decoder[TMessage] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
       //noinspection VariablePatternShadow
@@ -111,7 +89,7 @@ object CompactProtocol extends Protocol {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[FieldHeader] = {
       val availableByteCount = buffer.capacity() - readOffset
       if (availableByteCount >= 1) {
-        val byte1 = buffer.getByte(readOffset) & 0xff
+        val byte0 = buffer.getByte(readOffset) & 0xff
         // First byte looks as follows:
         //  76543210
         // +--------+
@@ -120,12 +98,13 @@ object CompactProtocol extends Protocol {
         // d = field id delta (unsigned 4 bits), >0, for the short form, 0 for stop field and extended form
         // t = field type id (4 bits), 0 for stop field
         //
-        if (byte1 == 0) {
+        if (byte0 == 0) {
+          // Stop field
           Decoded(FieldHeader(0, 0), buffer, readOffset + 1)
 
         } else {
-          val fieldIdDelta = (byte1 >> 4).toShort
-          val fieldTypeId = byte1 & 0x0F
+          val fieldIdDelta = (byte0 >> 4).toShort
+          val fieldTypeId = byte0 & 0x0f
 
           if (isInvalidTypeId(fieldTypeId)) {
             DecodeFailure("Not supported type id: " + fieldTypeId)
@@ -141,7 +120,7 @@ object CompactProtocol extends Protocol {
             // +--------+--------+--------+
             // |0000tttt|iiiiiiii|iiiiiiii|
             // +--------+--------+--------+
-            // t = field type id (4 bits)
+            // t = field type id (4 bits), always >0
             // i = field id (signed 16 bits)
             //
             if (availableByteCount >= 3) {
@@ -149,35 +128,21 @@ object CompactProtocol extends Protocol {
               Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 3)
 
             } else {
-              val availableBytes = Array.ofDim[Byte](availableByteCount)
-              buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-              DecodeInsufficientData(new FieldHeaderContinuationDecoder(availableBytes))
+              //noinspection VariablePatternShadow
+              BytesDecoder(3)
+                .decode(buffer, readOffset)
+                .andThen { case (bytes, buffer, readOffset) =>
+                  // itemTypeId was already verified to be correct
+                  val fieldTypeId = bytes(0) & 0x0f
+                  val fieldId = (bytes(1) << 8 | bytes(2)).toShort
+                  Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset)
+                }
             }
           }
         }
       } else {
         // no data available at all
         DecodeInsufficientData(this)
-      }
-    }
-  }
-
-  class FieldHeaderContinuationDecoder(previousData: Array[Byte]) extends Decoder[FieldHeader] {
-    require(previousData.length < 3)
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[FieldHeader] = {
-      val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 3)
-      if (concatenatedData.length == 3) {
-        val concatenatedBuffer = new UnsafeBuffer(concatenatedData)
-        val fieldTypeId = concatenatedBuffer.getByte(0) & 0x0f
-        val fieldId = concatenatedBuffer.getShort(1)
-        if (isInvalidTypeId(fieldTypeId)) {
-          DecodeFailure("Not supported field type id: " + fieldTypeId)
-        } else {
-          Decoded(FieldHeader(fieldId, fieldTypeId), buffer, newDataReadOffset)
-        }
-      } else {
-        DecodeInsufficientData(new FieldHeaderContinuationDecoder(concatenatedData))
       }
     }
   }
@@ -274,7 +239,7 @@ object CompactProtocol extends Protocol {
         val size = byte1 >> 4
         val itemTypeId = byte1 & 0x0F
 
-        if (itemTypeId < 1 || itemTypeId > 12) {
+        if (isInvalidTypeId(itemTypeId)) {
           DecodeFailure("Not supported type id: " + itemTypeId)
 
         } else if (size != 0xF) {
@@ -292,39 +257,29 @@ object CompactProtocol extends Protocol {
           //
           if (availableByteCount >= 5) {
             val size = buffer.getInt(readOffset + 1)
-            if (size < 0) {
-              DecodeFailure("Collection size must be positive " + size)
-            } else {
-              Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset + 5)
-            }
+            checkSize(size, itemTypeId, buffer, readOffset + 5)
 
           } else {
-            val availableBytes = Array.ofDim[Byte](availableByteCount)
-            buffer.getBytes(readOffset, availableBytes, 0, availableByteCount)
-            DecodeInsufficientData(new ListSetHeaderContinuationDecoder(availableBytes))
+            //noinspection VariablePatternShadow
+            BytesDecoder(5)
+              .decode(buffer, readOffset)
+              .andThen { case (bytes, buffer, readOffset) =>
+                val size = bytes(1) << 24 | bytes(2) << 16 | bytes(3) << 8 | bytes(4)
+                // itemTypeId was already verified to be correct
+                val itemTypeId = bytes(0) & 0x0f
+                checkSize(size, itemTypeId, buffer, readOffset)
+              }
           }
         }
       }
     }
 
-    private class ListSetHeaderContinuationDecoder(previousData: Array[Byte]) extends Decoder[ListSetHeader] {
-      require(previousData.length < 5)
-
-      override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
-        val (concatenatedData, newDataReadOffset) = DecoderUtil.concatData(previousData, buffer, readOffset, 5)
-        if (concatenatedData.length == 5) {
-          val concatenatedBuffer = new UnsafeBuffer(concatenatedData)
-          val itemTypeId = concatenatedBuffer.getByte(0) & 0x0f
-          val size = concatenatedBuffer.getInt(1)
-          // itemTypeId was already verified to be correct
-          if (size < 0) {
-            DecodeFailure("Collection size must be positive " + size)
-          } else {
-            Decoded(ListSetHeader(size, itemTypeId), buffer, newDataReadOffset)
-          }
-        } else {
-          DecodeInsufficientData(new ListSetHeaderContinuationDecoder(concatenatedData))
-        }
+    def checkSize(size: Int, itemTypeId: Int, buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
+      // TODO: add maximum size check
+      if (size < 0) {
+        DecodeFailure("Collection size must be positive " + size)
+      } else {
+        Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset)
       }
     }
   }
