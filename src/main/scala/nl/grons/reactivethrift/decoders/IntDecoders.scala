@@ -49,7 +49,7 @@ object Int32Decoder extends Decoder[Int] {
       Decoded(value, buffer, readOffset + 4)
     } else {
       BytesDecoder(4)
-        .map(bytes => bytes(0) << 24 | bytes(1) << 16 | bytes(2) << 8 | bytes(3))
+        .map(bytes => (bytes(0) & 0xff) << 24 | (bytes(1) & 0xff) << 16 | (bytes(2) & 0xff) << 8 | (bytes(3) & 0xff))
         .decode(buffer, readOffset)
     }
   }
@@ -68,8 +68,8 @@ object Int64Decoder extends Decoder[Long] {
     } else {
       BytesDecoder(8)
         .map(bytes =>
-          bytes(0) << 56L | bytes(1) << 48L | bytes(2) << 40L | bytes(3) << 32L |
-          bytes(4) << 24L | bytes(5) << 16L | bytes(6) <<  8L | bytes(7).toLong
+          (bytes(0) & 0xffL) << 56 | (bytes(1) & 0xffL) << 48 | (bytes(2) & 0xffL) << 40 | (bytes(3) & 0xffL) << 32 |
+          (bytes(4) & 0xffL) << 24 | (bytes(5) & 0xffL) << 16 | (bytes(6) & 0xffL) <<  8 | (bytes(7) & 0xffL)
         )
         .decode(buffer, readOffset)
     }

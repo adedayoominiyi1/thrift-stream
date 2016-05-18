@@ -82,7 +82,7 @@ object Int64Encoder extends Encoder[Long] {
       Encoded(buffer, writeOffset + 8)
     } else {
       val bytes = Array[Byte](
-        ((value >> 54) & 0xff).toByte,
+        ((value >> 56) & 0xff).toByte,
         ((value >> 48) & 0xff).toByte,
         ((value >> 40) & 0xff).toByte,
         ((value >> 32) & 0xff).toByte,
