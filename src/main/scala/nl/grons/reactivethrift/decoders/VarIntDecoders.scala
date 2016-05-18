@@ -17,16 +17,17 @@ object VarInt32Decoder extends Decoder[Int] {
       // All bytes are available, the fast path
       var result = 0
       var shift = 0
-      var offset = -1
+      var offset = readOffset
       var b: Byte = 0
       // read more bytes while the MSB is set
+      // TODO: protect against reading more then 5 bytes!
       do {
+        b = buffer.getByte(offset)
         offset += 1
-        b = buffer.getByte(readOffset + offset)
         result |= (b & 0x7F) << shift
         shift += 7
       } while (msb(b))
-      Decoded(result, buffer, readOffset + offset)
+      Decoded(result, buffer, offset)
 
     } else if (availableByteCount == 0) {
       // No bytes available at all
@@ -82,16 +83,17 @@ object VarInt64Decoder extends Decoder[Long] {
       // All bytes are available
       var result = 0L
       var shift = 0
-      var offset = -1
+      var offset = readOffset
       var b: Byte = 0
       // read more bytes while the MSB is set
+      // TODO: protect against reading more then 10 bytes!
       do {
+        b = buffer.getByte(offset)
         offset += 1
-        b = buffer.getByte(readOffset + offset)
         result |= (b & 0x7F).toLong << shift
         shift += 7
       } while (msb(b))
-      Decoded(result, buffer, readOffset + offset)
+      Decoded(result, buffer, offset)
 
     } else if (availableByteCount == 0) {
       // No bytes available at all

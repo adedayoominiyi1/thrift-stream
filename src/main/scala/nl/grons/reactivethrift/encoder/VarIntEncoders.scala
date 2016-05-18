@@ -14,11 +14,13 @@ object VarInt32Encoder extends Encoder[Int] {
       // Direct byte writes, the fast path
       var offset = writeOffset
       var toWrite = value
-      do {
+      while ((toWrite & ~0x7f) != 0) {
         buffer.putByte(offset, ((toWrite & 0x7f) | 0x80).toByte)
         offset += 1
         toWrite >>>= 7
-      } while (toWrite != 0)
+      }
+      buffer.putByte(offset, toWrite.toByte)
+      offset += 1
       Encoded(buffer, offset)
 
     } else {
@@ -26,11 +28,13 @@ object VarInt32Encoder extends Encoder[Int] {
       val bytes = Array.ofDim[Byte](5)
       var varIntByteCount = 0
       var toWrite = value
-      do {
+      while ((toWrite & ~0x7f) != 0) {
         bytes(varIntByteCount) = ((toWrite & 0x7f) | 0x80).toByte
         varIntByteCount += 1
         toWrite >>>= 7
-      } while (toWrite != 0)
+      }
+      bytes(varIntByteCount) = toWrite.toByte
+      varIntByteCount += 1
       val varIntBytes = bytes.take(varIntByteCount)
       BytesEncoder.encode(varIntBytes, buffer, writeOffset)
     }
@@ -48,11 +52,13 @@ object VarInt64Encoder extends Encoder[Long] {
       // Direct byte writes, the fast path
       var offset = writeOffset
       var toWrite = value
-      do {
-        buffer.putByte(offset, ((toWrite & 0x7f) | 0x80).toByte)
+      while ((toWrite & ~0x7fL) != 0) {
+        buffer.putByte(offset, ((toWrite & 0x7fL) | 0x80).toByte)
         offset += 1
         toWrite >>>= 7
-      } while (toWrite != 0)
+      }
+      buffer.putByte(offset, toWrite.toByte)
+      offset += 1
       Encoded(buffer, offset)
 
     } else {
@@ -60,11 +66,13 @@ object VarInt64Encoder extends Encoder[Long] {
       val bytes = Array.ofDim[Byte](10)
       var varIntByteCount = 0
       var toWrite = value
-      do {
+      while ((toWrite & ~0x7fL) != 0) {
         bytes(varIntByteCount) = ((toWrite & 0x7fL) | 0x80).toByte
         varIntByteCount += 1
         toWrite >>>= 7
-      } while (toWrite != 0)
+      }
+      bytes(varIntByteCount) = toWrite.toByte
+      varIntByteCount += 1
       val varIntBytes = bytes.take(varIntByteCount)
       BytesEncoder.encode(varIntBytes, buffer, writeOffset)
     }
