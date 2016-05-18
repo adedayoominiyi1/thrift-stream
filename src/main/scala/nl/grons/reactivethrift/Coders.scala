@@ -1,10 +1,6 @@
 package nl.grons.reactivethrift
 
 import nl.grons.reactivethrift.decoders.Decoder
-import nl.grons.reactivethrift.encoder.Encoder
-import uk.co.real_logic.agrona.DirectBuffer
-
-import scala.annotation.tailrec
 
 // Protocol
 
@@ -35,7 +31,7 @@ object MessageType {
 
 // Coders
 
-trait Coder[A] extends Encoder[A] with Decoder[A]
+// trait Coder[A] extends Encoder[A] with Decoder[A]
 
 // Builders
 
