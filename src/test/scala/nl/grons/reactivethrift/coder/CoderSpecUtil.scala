@@ -37,51 +37,67 @@ trait CoderSpecUtil extends PropertyChecks {
 
     val bufferSizesGen: Gen[Seq[Int]] = Gen.oneOf(specialBufferSizesGen, randomBufferSizesGen)
 
-    forAll((values, "values"), (bufferSizesGen, "bufferSizes")) { (value: A, bufferSizes: Seq[Int]) =>
+    forAll(
+      (values, "values"),
+      (bufferSizesGen, "encodeBufferSizes"),
+      (bufferSizesGen, "decodeBufferSizes")
+    ) { (value: A, encodeBufferSizes: Seq[Int], decodeBufferSizes: Seq[Int]) =>
       // The whenever protects against too aggressive shrinks.
-      whenever(bufferSizes.sum >= minimumBufferSize) {
-        val buffers = bufferSizes.map(size => new UnsafeBuffer(Array.ofDim[Byte](size))).toIndexedSeq
-
-        // Encode
-        var bufferIdx = 0
-        var encodeResult = encoder.encode(value, buffers(bufferIdx), 0)
-        encodeResult should not be a[EncodeFailure]
-        var continuationEncoder: ContinuationEncoder = encodeResult match {
-          case EncodeInsufficientBuffer(c) => c
-          case _ => null
-        }
-        var done = encodeResult.isInstanceOf[Encoded] || bufferIdx == bufferSizes.length || continuationEncoder == null
-        while (!done) {
-          bufferIdx += 1
-          encodeResult = continuationEncoder.encode(buffers(bufferIdx), 0)
-          encodeResult should not be a[EncodeFailure]
-          continuationEncoder = encodeResult match {
-            case EncodeInsufficientBuffer(c) => c
-            case _ => null
-          }
-          done = encodeResult.isInstanceOf[Encoded] || bufferIdx == bufferSizes.length || continuationEncoder == null
-        }
-
-        // Decode
-        bufferIdx = 0
-        done = false
-        var decodeResult: DecodeResult[A] = null
-        var nextDecoder: Decoder[A] = decoder
-        do {
-          decodeResult = nextDecoder.decode(buffers(bufferIdx), 0)
-          decodeResult should not be a[DecodeFailure[_]]
-          bufferIdx += 1
-          nextDecoder = decodeResult match {
-            case DecodeInsufficientData(cd) => cd
-            case _ => null
-          }
-          done = decodeResult.isInstanceOf[Decoded[A]] || bufferIdx == bufferSizes.length || nextDecoder == null
-        } while (!done)
-
-        decodeResult shouldBe a [Decoded[_]]
-        decodeResult.asInstanceOf[Decoded[A]].value shouldBe value
+      whenever(encodeBufferSizes.sum >= minimumBufferSize && decodeBufferSizes.sum >= minimumBufferSize) {
+        doEncodeDecodeTest(value, encodeBufferSizes, decodeBufferSizes, encoder, decoder)
       }
     }
   }
+
+  def doEncodeDecodeTest[A](value: A, encodeBufferSizes: Seq[Int], decodeBufferSizes: Seq[Int], encoder: Encoder[A], decoder: Decoder[A]): Unit = {
+    val encodeBuffers = encodeBufferSizes.map(size => new UnsafeBuffer(Array.ofDim[Byte](size))).toIndexedSeq
+
+    // Encode
+    var bufferIdx = 0
+    var encodeResult = encoder.encode(value, encodeBuffers(bufferIdx), 0)
+    encodeResult should not be a[EncodeFailure]
+    var continuationEncoder: ContinuationEncoder = encodeResult match {
+      case EncodeInsufficientBuffer(c) => c
+      case _ => null
+    }
+    var done = encodeResult.isInstanceOf[Encoded] || bufferIdx == encodeBufferSizes.length || continuationEncoder == null
+    while (!done) {
+      bufferIdx += 1
+      encodeResult = continuationEncoder.encode(encodeBuffers(bufferIdx), 0)
+      encodeResult should not be a[EncodeFailure]
+      continuationEncoder = encodeResult match {
+        case EncodeInsufficientBuffer(c) => c
+        case _ => null
+      }
+      done = encodeResult.isInstanceOf[Encoded] || bufferIdx == encodeBufferSizes.length || continuationEncoder == null
+    }
+
+    // Copy data from encode buffers to decode buffers
+    Console.out.println("value: " + value + " encode: " + encodeBuffers.map(_.byteArray().mkString("[", ",", "]")).mkString(" - "))
+    val encodedBytes = encodeBuffers.map(_.byteArray()).reduce(_ ++ _)
+    val decodeBufferSlices = decodeBufferSizes.scanLeft(0)(_ + _).sliding(2)
+    val decodeBuffers = decodeBufferSlices.map { case Seq(start, end) => new UnsafeBuffer(encodedBytes.slice(start, end))}.toIndexedSeq
+    Console.out.println("value: " + value + " decode: " + decodeBuffers.map(_.byteArray().mkString("[", ",", "]")).mkString(" - "))
+
+    // Decode
+    bufferIdx = 0
+    done = false
+    var decodeResult: DecodeResult[A] = null
+    var nextDecoder: Decoder[A] = decoder
+    do {
+      decodeResult = nextDecoder.decode(decodeBuffers(bufferIdx), 0)
+      decodeResult should not be a[DecodeFailure[_]]
+      bufferIdx += 1
+      nextDecoder = decodeResult match {
+        case DecodeInsufficientData(cd) => cd
+        case _ => null
+      }
+      done = decodeResult.isInstanceOf[Decoded[A]] || bufferIdx == decodeBufferSizes.length || nextDecoder == null
+    } while (!done)
+
+    decodeResult shouldBe a [Decoded[_]]
+    decodeResult.asInstanceOf[Decoded[A]].value shouldBe value
+  }
+
 
 }
