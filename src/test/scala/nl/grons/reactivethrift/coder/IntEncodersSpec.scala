@@ -1,5 +1,7 @@
 package nl.grons.reactivethrift.coder
 
+import java.nio.ByteBuffer
+
 import nl.grons.reactivethrift.decoders.DecodeResult._
 import nl.grons.reactivethrift.decoders._
 import nl.grons.reactivethrift.encoder.EncodeResult._
@@ -13,7 +15,8 @@ import uk.co.real_logic.agrona.concurrent.UnsafeBuffer
 class IntEncodersSpec extends FunSpec with CoderSpecUtil {
 
   intCoderSpec[Byte](
-    1.toByte,
+    "Int8Coder",
+    0xfe.toByte,
     1,
     Int8Encoder,
     Int8Decoder,
@@ -22,42 +25,76 @@ class IntEncodersSpec extends FunSpec with CoderSpecUtil {
   )
 
   intCoderSpec[Short](
-    1.toShort,
+    "Int16Coder",
+    0xfedc.toShort,
     2,
     Int16Encoder,
     Int16Decoder,
+    Gen.chooseNum(Short.MinValue, Short.MaxValue),
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).getShort(index)
+  )
+
+  intCoderSpec[Int](
+    "Int32Coder",
+    0xfedcba98,
+    4,
+    Int32Encoder,
+    Int32Decoder,
+    Gen.chooseNum(Int.MinValue, Int.MaxValue),
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).getInt(index)
+  )
+
+  intCoderSpec[Long](
+    "Int64Coder",
+    0xfedcba9876543210L,
+    8,
+    Int64Encoder,
+    Int64Decoder,
+    Gen.chooseNum(Long.MinValue, Long.MaxValue),
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).getLong(index)
+  )
+
+  intCoderSpec[Short](
+    "Int16FastCoder",
+    0xfedc.toShort,
+    2,
+    Int16FastEncoder,
+    Int16FastDecoder,
     Gen.chooseNum(Short.MinValue, Short.MaxValue),
     (buffer, index) => buffer.getShort(index)
   )
 
   intCoderSpec[Int](
-    1,
+    "Int32FastCoder",
+    0xfedcba98,
     4,
-    Int32Encoder,
-    Int32Decoder,
+    Int32FastEncoder,
+    Int32FastDecoder,
     Gen.chooseNum(Int.MinValue, Int.MaxValue),
     (buffer, index) => buffer.getInt(index)
   )
 
   intCoderSpec[Long](
-    1L,
+    "Int64FastCoder",
+    0xfedcba9876543210L,
     8,
-    Int64Encoder,
-    Int64Decoder,
+    Int64FastEncoder,
+    Int64FastDecoder,
     Gen.chooseNum(Long.MinValue, Long.MaxValue),
     (buffer, index) => buffer.getLong(index)
   )
 
   def intCoderSpec[IntType](
-                             intValue: IntType,
-                             intSerializationLength: Int,
-                             intEncoder: Encoder[IntType],
-                             intDecoder: Decoder[IntType],
-                             intGen: Gen[IntType],
-                             directIntRead: (MutableDirectBuffer, Int) => IntType
-                           ): Unit = {
+                           coderName: String,
+                           intValue: IntType,
+                           intSerializationLength: Int,
+                           intEncoder: Encoder[IntType],
+                           intDecoder: Decoder[IntType],
+                           intGen: Gen[IntType],
+                           directIntRead: (MutableDirectBuffer, Int) => IntType
+                         ): Unit = {
 
-    describe(s"An ${intEncoder.getClass.getSimpleName} encoder/decoder") {
+    describe(s"An $coderName") {
       it("can encode/decode at any position") {
         val startIndexGen: Gen[Int] = Gen.chooseNum(0, 80)
         forAll((intGen, "intValue"), (startIndexGen, "startIndex")) { (intValue: IntType, startIndex: Int) =>
@@ -93,5 +130,11 @@ class IntEncodersSpec extends FunSpec with CoderSpecUtil {
       }
     }
   }
+
+//  describe("regression int16") {
+//    it("doesnt work yet") {
+//      doEncodeDecodeTest[Short](-26555, List(2, 2), List(0, 1, 0, 1), Int16Encoder, Int16Decoder)
+//    }
+//  }
 
 }

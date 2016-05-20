@@ -14,7 +14,7 @@ class SimpleProtocolSpec extends FunSpec {
       val buffer = new UnsafeBuffer(Array.ofDim[Byte](100))
       var writeIndex = 0
       buffer.putByte(writeIndex, 0x45); writeIndex += 1
-      buffer.putInt(writeIndex, 2016); writeIndex += 4
+      buffer.putInt(writeIndex, 2016); writeIndex += 4  // TODO: fix byte order of writing
       buffer.putInt(writeIndex, 0); writeIndex += 1
 
       val bookDecoder: Decoder[Book] = CompactProtocol.structDecoder(() => new BookStructBuilder())

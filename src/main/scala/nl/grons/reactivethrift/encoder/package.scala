@@ -21,4 +21,7 @@ package object encoder {
   val DoubleEncoder: Encoder[Double] =
     Encoder.map(java.lang.Double.doubleToLongBits, Int64Encoder)
 
+  val DoubleFastEncoder: Encoder[Double] =
+    Encoder.map(java.lang.Double.doubleToLongBits, Int64FastEncoder)
+
 }

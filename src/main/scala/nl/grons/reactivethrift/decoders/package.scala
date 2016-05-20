@@ -6,7 +6,7 @@ package object decoders {
     VarInt32Decoder.map(_.toShort)
 
   val ZigZagInt32Decoder: Decoder[Int] = {
-    @inline def zigzagToInt(n: Int): Int = (n >>> 1) ^ -(n & 1)
+    @inline def zigzagToInt(n: Int): Int = (n >>> 1) ^ - (n & 1)
     VarInt32Decoder.map(zigzagToInt)
   }
 
@@ -14,11 +14,14 @@ package object decoders {
     ZigZagInt32Decoder.map(_.toShort)
 
   val ZigZagInt64Decoder: Decoder[Long] = {
-    @inline def zigzagToLong(n: Long): Long = (n >>> 1) ^ -(n & 1)
+    @inline def zigzagToLong(n: Long): Long = (n >>> 1) ^ - (n & 1)
     VarInt64Decoder.map(zigzagToLong)
   }
 
   val DoubleDecoder: Decoder[Double] =
     Int64Decoder.map(java.lang.Double.longBitsToDouble)
+
+  val DoubleFastDecoder: Decoder[Double] =
+    Int64FastDecoder.map(java.lang.Double.longBitsToDouble)
 
 }

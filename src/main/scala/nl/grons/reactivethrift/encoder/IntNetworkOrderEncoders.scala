@@ -34,12 +34,13 @@ object Int16Encoder extends Encoder[Short] {
   override def encode(value: Short, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
     val availableByteCount = buffer.capacity() - writeOffset
     if (availableByteCount >= 2) {
-      buffer.putShort(writeOffset, value)
+      buffer.putByte(writeOffset    , ((value >> 8) & 0xff).toByte)
+      buffer.putByte(writeOffset + 1, (value        & 0xff).toByte)
       Encoded(buffer, writeOffset + 2)
     } else {
       val bytes = Array[Byte](
         ((value >> 8) & 0xff).toByte,
-        (value         & 0xff).toByte
+        (value        & 0xff).toByte
       )
       BytesEncoder.encode(bytes, buffer, writeOffset)
     }
@@ -55,7 +56,10 @@ object Int32Encoder extends Encoder[Int] {
   override def encode(value: Int, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
     val availableByteCount = buffer.capacity() - writeOffset
     if (availableByteCount >= 4) {
-      buffer.putInt(writeOffset, value)
+      buffer.putByte(writeOffset    , ((value >> 24) & 0xff).toByte)
+      buffer.putByte(writeOffset + 1, ((value >> 16) & 0xff).toByte)
+      buffer.putByte(writeOffset + 2, ((value >>  8) & 0xff).toByte)
+      buffer.putByte(writeOffset + 3, (value         & 0xff).toByte)
       Encoded(buffer, writeOffset + 4)
     } else {
       val bytes = Array[Byte](
@@ -78,7 +82,14 @@ object Int64Encoder extends Encoder[Long] {
   override def encode(value: Long, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
     val availableByteCount = buffer.capacity() - writeOffset
     if (availableByteCount >= 8) {
-      buffer.putLong(writeOffset, value)
+      buffer.putByte(writeOffset    , ((value >> 56) & 0xff).toByte)
+      buffer.putByte(writeOffset + 1, ((value >> 48) & 0xff).toByte)
+      buffer.putByte(writeOffset + 2, ((value >> 40) & 0xff).toByte)
+      buffer.putByte(writeOffset + 3, ((value >> 32) & 0xff).toByte)
+      buffer.putByte(writeOffset + 4, ((value >> 24) & 0xff).toByte)
+      buffer.putByte(writeOffset + 5, ((value >> 16) & 0xff).toByte)
+      buffer.putByte(writeOffset + 6, ((value >>  8) & 0xff).toByte)
+      buffer.putByte(writeOffset + 7, (value         & 0xff).toByte)
       Encoded(buffer, writeOffset + 8)
     } else {
       val bytes = Array[Byte](
