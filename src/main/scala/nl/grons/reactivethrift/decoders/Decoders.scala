@@ -22,6 +22,20 @@ trait Decoder[A] { self =>
     }
   }
 
+  /**
+    * Creates a new decoder that calls the decoder created by `f` applied to the result of this decoder.
+    */
+  def flatMap[B](f: A => Decoder[B]): Decoder[B] = new Decoder[B] {
+    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[B] = {
+      //noinspection VariablePatternShadow
+      self
+        .decode(buffer, readOffset)
+        .andThen { case (a, buffer, readOffset) =>
+          f(a).decode(buffer, readOffset)
+        }
+    }
+  }
+
   def trampolined: Decoder[A] = Decoder.trampoliningDecoder(self)
 
   def product[B](bDecoder: Decoder[B]): Decoder[(A, B)] = Decoder.product(self, bDecoder)
