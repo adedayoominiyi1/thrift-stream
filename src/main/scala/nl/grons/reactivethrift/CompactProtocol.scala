@@ -16,13 +16,11 @@ object CompactProtocol extends Protocol {
     new StructDecoder(structBuilder).trampolined
   }
 
-  val BooleanTrueDecoder: Decoder[Boolean] =
-    Decoder.unit(true)
-
-  val BooleanFalseDecoder: Decoder[Boolean] =
-    Decoder.unit(false)
-
   private val EmptyByteArray: Array[Byte] = Array.empty
+
+  private val BooleanTrueDecoder: Decoder[Boolean] = Decoder.unit(true)
+
+  private val BooleanFalseDecoder: Decoder[Boolean] = Decoder.unit(false)
 
   //
   // Protocol:
@@ -60,10 +58,12 @@ object CompactProtocol extends Protocol {
     * * var int32: length of message name
     * * bytes: message name
     */
-  class MessageDecoder extends Decoder[TMessage] {
+  object MessageDecoder extends Decoder[TMessage] {
+    private val ProtocolDecoder = Decoder.product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
+
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
       //noinspection VariablePatternShadow
-      Decoder.product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
+      ProtocolDecoder
         .decode(buffer, readOffset)
         .andThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
           val version = versionInfo & 0x1F
@@ -123,21 +123,13 @@ object CompactProtocol extends Protocol {
             // t = field type id (4 bits), always >0
             // i = field id (signed 16 bits)
             //
-            if (availableByteCount >= 3) {
-              val fieldId = buffer.getShort(readOffset + 1)
-              Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 3)
-
-            } else {
-              //noinspection VariablePatternShadow
-              BytesDecoder(3)
-                .decode(buffer, readOffset)
-                .andThen { case (bytes, buffer, readOffset) =>
-                  // itemTypeId was already verified to be correct
-                  val fieldTypeId = bytes(0) & 0x0f
-                  val fieldId = (bytes(1) << 8 | bytes(2)).toShort
-                  Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset)
-                }
-            }
+            // TODO: make more efficient by directly reading the field id from buffer (when capacity allows it)
+            //noinspection VariablePatternShadow
+            Int16Decoder
+              .decode(buffer, readOffset + 1)
+              .andThen { case (fieldId, buffer, readOffset) =>
+                Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset)
+              }
           }
         }
       } else {
@@ -255,31 +247,19 @@ object CompactProtocol extends Protocol {
           // t = item type id (unsigned 4 bits)
           // s = size (signed 32 bits)
           //
-          if (availableByteCount >= 5) {
-            val size = buffer.getInt(readOffset + 1)
-            checkSize(size, itemTypeId, buffer, readOffset + 5)
-
-          } else {
-            //noinspection VariablePatternShadow
-            BytesDecoder(5)
-              .decode(buffer, readOffset)
-              .andThen { case (bytes, buffer, readOffset) =>
-                val size = bytes(1) << 24 | bytes(2) << 16 | bytes(3) << 8 | bytes(4)
-                // itemTypeId was already verified to be correct
-                val itemTypeId = bytes(0) & 0x0f
-                checkSize(size, itemTypeId, buffer, readOffset)
+          // TODO: make more efficient by directly reading the size from buffer (when capacity allows it)
+          //noinspection VariablePatternShadow
+          Int32Decoder
+            .decode(buffer, readOffset + 1)
+            .andThen { case (size, buffer, readOffset) =>
+              // TODO: enforce global collection size limit
+              if (size < 0) {
+                DecodeFailure("Collection size must be positive " + size)
+              } else {
+                Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset)
               }
-          }
+            }
         }
-      }
-    }
-
-    def checkSize(size: Int, itemTypeId: Int, buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
-      // TODO: add maximum size check
-      if (size < 0) {
-        DecodeFailure("Collection size must be positive " + size)
-      } else {
-        Decoded(ListSetHeader(size, itemTypeId), buffer, readOffset)
       }
     }
   }
@@ -289,7 +269,6 @@ object CompactProtocol extends Protocol {
       ListSetHeaderDecoder
         .decode(buffer, readOffset)
         .andThen { (listSetHeader, buffer, readOffset) =>
-          // TODO: enforce global collection size limit
           val listBuilder = listBuilderF(listSetHeader.size)
           val itemDecoder = listSetHeader.itemTypeId match {
             case 9 | 10 => new CollectionDecoder(listBuilder.collectionBuilderForItem())
