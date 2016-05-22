@@ -6,7 +6,7 @@ import uk.co.real_logic.agrona.MutableDirectBuffer
 /**
   * Int16 (Short) encoder.
   *
-  * Protocol: 2 bytes, least significant byte first.
+  * Protocol: 2 bytes, least significant byte first (little endian).
   */
 object Int16FastEncoder extends Encoder[Short] {
   override def encode(value: Short, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
@@ -27,7 +27,7 @@ object Int16FastEncoder extends Encoder[Short] {
 /**
   * Int32 (Int) encoder.
   *
-  * Protocol: 4 bytes, least significant byte first.
+  * Protocol: 4 bytes, least significant byte first (little endian).
   */
 object Int32FastEncoder extends Encoder[Int] {
   override def encode(value: Int, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
@@ -50,7 +50,7 @@ object Int32FastEncoder extends Encoder[Int] {
 /**
   * Int64 (Long) encoder.
   *
-  * Protocol: 8 bytes, least significant byte first.
+  * Protocol: 8 bytes, least significant byte first (little endian).
   */
 object Int64FastEncoder extends Encoder[Long] {
   override def encode(value: Long, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {

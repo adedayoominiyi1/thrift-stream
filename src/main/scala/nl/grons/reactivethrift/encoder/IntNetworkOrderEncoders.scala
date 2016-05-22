@@ -28,7 +28,7 @@ object Int8Encoder extends Encoder[Byte] {
 /**
   * Int16 (Short) encoder.
   *
-  * Protocol: 2 bytes, most significant byte first.
+  * Protocol: 2 bytes, most significant byte first (big endian).
   */
 object Int16Encoder extends Encoder[Short] {
   override def encode(value: Short, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
@@ -50,7 +50,7 @@ object Int16Encoder extends Encoder[Short] {
 /**
   * Int32 (Int) encoder.
   *
-  * Protocol: 4 bytes, most significant byte first.
+  * Protocol: 4 bytes, most significant byte first (big endian).
   */
 object Int32Encoder extends Encoder[Int] {
   override def encode(value: Int, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
@@ -76,7 +76,7 @@ object Int32Encoder extends Encoder[Int] {
 /**
   * Int64 (Long) encoder.
   *
-  * Protocol: 8 bytes, most significant byte first.
+  * Protocol: 8 bytes, most significant byte first (big endian).
   */
 object Int64Encoder extends Encoder[Long] {
   override def encode(value: Long, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {

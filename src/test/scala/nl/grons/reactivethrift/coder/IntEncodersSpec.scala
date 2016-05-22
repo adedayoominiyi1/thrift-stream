@@ -1,6 +1,6 @@
 package nl.grons.reactivethrift.coder
 
-import java.nio.ByteBuffer
+import java.nio.{ByteBuffer, ByteOrder}
 
 import nl.grons.reactivethrift.decoders.DecodeResult._
 import nl.grons.reactivethrift.decoders._
@@ -61,7 +61,7 @@ class IntEncodersSpec extends FunSpec with CoderSpecUtil {
     Int16FastEncoder,
     Int16FastDecoder,
     Gen.chooseNum(Short.MinValue, Short.MaxValue),
-    (buffer, index) => buffer.getShort(index)
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).order(ByteOrder.LITTLE_ENDIAN).getShort(index)
   )
 
   intCoderSpec[Int](
@@ -71,7 +71,7 @@ class IntEncodersSpec extends FunSpec with CoderSpecUtil {
     Int32FastEncoder,
     Int32FastDecoder,
     Gen.chooseNum(Int.MinValue, Int.MaxValue),
-    (buffer, index) => buffer.getInt(index)
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).order(ByteOrder.LITTLE_ENDIAN).getInt(index)
   )
 
   intCoderSpec[Long](
@@ -81,7 +81,7 @@ class IntEncodersSpec extends FunSpec with CoderSpecUtil {
     Int64FastEncoder,
     Int64FastDecoder,
     Gen.chooseNum(Long.MinValue, Long.MaxValue),
-    (buffer, index) => buffer.getLong(index)
+    (buffer, index) => ByteBuffer.wrap(buffer.byteArray()).order(ByteOrder.LITTLE_ENDIAN).getLong(index)
   )
 
   def intCoderSpec[IntType](
