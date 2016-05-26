@@ -115,17 +115,17 @@ object CompactProtocol extends Protocol {
             Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset + 1)
 
           } else {
-            // Extended form (3 bytes).
+            // Extended form (2 to 5 bytes).
             //  76543210 76543210 76543210
-            // +--------+--------+--------+
-            // |0000tttt|iiiiiiii|iiiiiiii|
-            // +--------+--------+--------+
+            // +--------+--------+...+--------+
+            // |0000tttt| field id            |
+            // +--------+--------+...+--------+
             // t = field type id (4 bits), always >0
-            // i = field id (signed 16 bits)
+            // i = field id (signed 16 bits, encoded as zigzag int)
             //
             // TODO: make more efficient by directly reading the field id from buffer (when capacity allows it)
             //noinspection VariablePatternShadow
-            Int16Decoder
+            ZigZagInt16Decoder
               .decode(buffer, readOffset + 1)
               .andThen { case (fieldId, buffer, readOffset) =>
                 Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset)
