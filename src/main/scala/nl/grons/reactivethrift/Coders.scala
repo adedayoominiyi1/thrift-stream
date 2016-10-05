@@ -5,7 +5,7 @@ import nl.grons.reactivethrift.decoders.Decoder
 // Protocol
 
 trait Protocol {
-  def structDecoder[A](structBuilder: () => StructBuilder): Decoder[A]
+  def structDecoder[A](structBuilder: Factory[StructBuilder]): Decoder[A]
 }
 
 object Protocol {
@@ -42,7 +42,7 @@ trait StructBuilder {
 
   def mapBuilderForField(fieldId: Short): Int => MapBuilder
 
-  def structBuilderForField(fieldId: Short): () => StructBuilder
+  def structBuilderForField(fieldId: Short): Factory[StructBuilder]
 
   def readBoolean(fieldId: Short, fieldValue: Boolean): Unit
 
@@ -65,14 +65,21 @@ trait StructBuilder {
   def readStruct(fieldId: Short, fieldValue: Any): Unit
 }
 
+object StructBuilder {
+  val IgnoreAllFactory: Factory[StructBuilder] = {
+    val ignoreAllStructBuilder = new IgnoreAllStructBuilder {}
+    () => ignoreAllStructBuilder
+  }
+}
+
 class IgnoreAllStructBuilder extends StructBuilder {
   override def build(): AnyRef = null
 
-  override def collectionBuilderForField(fieldId: Short) = _ => IgnoreAllCollectionBuilder
+  override def collectionBuilderForField(fieldId: Short) = CollectionBuilder.IgnoreAllFactory
 
-  override def mapBuilderForField(fieldId: Short) = _ => IgnoreAllMapBuilder
+  override def mapBuilderForField(fieldId: Short) = MapBuilder.IgnoreAllFactory
 
-  override def structBuilderForField(fieldId: Short) = () => IgnoreAllStructBuilder
+  override def structBuilderForField(fieldId: Short) = StructBuilder.IgnoreAllFactory
 
   override def readBoolean(fieldId: Short, value: Boolean): Unit = {}
 
@@ -95,46 +102,52 @@ class IgnoreAllStructBuilder extends StructBuilder {
   override def readStruct(fieldId: Short, value: Any): Unit = {}
 }
 
-object IgnoreAllStructBuilder extends IgnoreAllStructBuilder
-
 trait CollectionBuilder {
   def build(): AnyRef
 
-  def collectionBuilderForItem(): Int => CollectionBuilder = _ => IgnoreAllCollectionBuilder
+  def collectionBuilderForItem(): Int => CollectionBuilder = CollectionBuilder.IgnoreAllFactory
 
-  def mapBuilderForItem(): Int => MapBuilder = _ => IgnoreAllMapBuilder
+  def mapBuilderForItem(): Int => MapBuilder = MapBuilder.IgnoreAllFactory
 
-  def structBuilderForItem(): () => StructBuilder = () => IgnoreAllStructBuilder
+  def structBuilderForItem(): Factory[StructBuilder] = StructBuilder.IgnoreAllFactory
 
   def readItem(value: Any): Unit
 }
 
-object IgnoreAllCollectionBuilder extends CollectionBuilder {
-  override def build(): AnyRef = null
-
-  override def readItem(value: Any): Unit = {}
+object CollectionBuilder {
+  val IgnoreAllFactory: Int => CollectionBuilder = {
+    val ignoreAllCollectionBuilder = new CollectionBuilder {
+      override def readItem(value: Any): Unit = {}
+      override def build(): AnyRef = null
+    }
+    _ => ignoreAllCollectionBuilder
+  }
 }
 
 trait MapBuilder {
   def build(): AnyRef
 
-  def collectionBuilderForKey(): Int => CollectionBuilder = _ => IgnoreAllCollectionBuilder
+  def collectionBuilderForKey(): Int => CollectionBuilder = CollectionBuilder.IgnoreAllFactory
 
-  def mapBuilderForKey(): Int => MapBuilder = _ => IgnoreAllMapBuilder
+  def mapBuilderForKey(): Int => MapBuilder = MapBuilder.IgnoreAllFactory
 
-  def structBuilderForKey(): () => StructBuilder = () => IgnoreAllStructBuilder
+  def structBuilderForKey(): Factory[StructBuilder] = StructBuilder.IgnoreAllFactory
 
-  def collectionBuilderForValue(): Int => CollectionBuilder = _ => IgnoreAllCollectionBuilder
+  def collectionBuilderForValue(): Int => CollectionBuilder = CollectionBuilder.IgnoreAllFactory
 
-  def mapBuilderForValue(): Int => MapBuilder = _ => IgnoreAllMapBuilder
+  def mapBuilderForValue(): Int => MapBuilder = MapBuilder.IgnoreAllFactory
 
-  def structBuilderForValue(): () => StructBuilder = () => IgnoreAllStructBuilder
+  def structBuilderForValue(): Factory[StructBuilder] = StructBuilder.IgnoreAllFactory
 
   def readItem(key: Any, value: Any): Unit
 }
 
-object IgnoreAllMapBuilder extends MapBuilder {
-  override def build(): AnyRef = null
-
-  override def readItem(key: Any, value: Any): Unit = {}
+object MapBuilder {
+  val IgnoreAllFactory: Int => MapBuilder = {
+    val ignoreAllMapBuilder = new MapBuilder {
+      override def build(): AnyRef = null
+      override def readItem(key: Any, value: Any): Unit = {}
+    }
+    _ => ignoreAllMapBuilder
+  }
 }

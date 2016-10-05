@@ -12,7 +12,7 @@ object CompactProtocol extends Protocol {
   private val CompactProtocolId : Byte = 0x82.toByte
   private val CompactProtocolVersion: Byte = 1
 
-  override def structDecoder[A](structBuilder: () => StructBuilder): Decoder[A] = {
+  override def structDecoder[A](structBuilder: Factory[StructBuilder]): Decoder[A] = {
     new StructDecoder(structBuilder).trampolined
   }
 
@@ -27,25 +27,19 @@ object CompactProtocol extends Protocol {
   // * VarInt32 with length of array
   // * the bytes
   //
-  object BinaryDecoder extends Decoder[Array[Byte]] {
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[Array[Byte]] = {
-      //noinspection VariablePatternShadow
-      VarInt32Decoder
-        .decode(buffer, readOffset)
-        .andThen { case (length, buffer, readOffset) =>
-          // TODO: add maximum length check
-          if (length == 0) {
-            Decoded(EmptyByteArray, buffer, readOffset)
-          } else if (length > 0) {
-            BytesDecoder(length).decode(buffer, readOffset)
-          } else {
-            DecodeFailure(s"Negative length: $length")
-          }
-        }
+  private val BinaryDecoder: Decoder[Array[Byte]] =
+    VarInt32Decoder.decodeAndThen { case (length, buffer, readOffset) =>
+      // TODO: add maximum length check
+      if (length == 0) {
+        Decoded(EmptyByteArray, buffer, readOffset)
+      } else if (length > 0) {
+        BytesDecoder(length).decode(buffer, readOffset)
+      } else {
+        DecodeFailure(s"Negative length: $length")
+      }
     }
-  }
 
-  val StringDecoder: Decoder[String] =
+  private val StringDecoder: Decoder[String] =
     BinaryDecoder.map(binary => new String(binary, StandardCharsets.UTF_8))
 
   /**
@@ -58,34 +52,28 @@ object CompactProtocol extends Protocol {
     * * var int32: length of message name
     * * bytes: message name
     */
-  object MessageDecoder extends Decoder[TMessage] {
-    private val ProtocolDecoder = Decoder.product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
-
-    override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[TMessage] = {
-      //noinspection VariablePatternShadow
-      ProtocolDecoder
-        .decode(buffer, readOffset)
-        .andThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
-          val version = versionInfo & 0x1F
-          val messageType = ((versionInfo  & 0xE0) >> 5).toByte
-          if (protocolId != CompactProtocolId) {
-            DecodeFailure(s"Received TMessage with unsupported protocol $protocolId (only $CompactProtocolId is supported)")
-          } else if (version != CompactProtocolVersion) {
-            DecodeFailure(s"Received TMessage with unsupported version $version (only $CompactProtocolVersion is supported)")
-          } else {
-            Decoded(TMessage(name, messageType, sequenceId), buffer, readOffset)
-          }
+  private val MessageDecoder: Decoder[TMessage] =
+    Decoder
+      .product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
+      .decodeAndThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
+        val version = versionInfo & 0x1F
+        val messageType = ((versionInfo  & 0xE0) >> 5).toByte
+        if (protocolId != CompactProtocolId) {
+          DecodeFailure(s"Received TMessage with unsupported protocol $protocolId (only $CompactProtocolId is supported)")
+        } else if (version != CompactProtocolVersion) {
+          DecodeFailure(s"Received TMessage with unsupported version $version (only $CompactProtocolVersion is supported)")
+        } else {
+          Decoded(TMessage(name, messageType, sequenceId), buffer, readOffset)
         }
-    }
-  }
+      }
 
   // Field header decoder
 
-  case class FieldHeader(fieldId: Short, fieldTypeId: Int) {
+  private case class FieldHeader(fieldId: Short, fieldTypeId: Int) {
     def isStopField = fieldTypeId == 0
   }
 
-  class FieldHeaderDecoder(previousFieldId: Short) extends Decoder[FieldHeader] {
+  private class FieldHeaderDecoder(previousFieldId: Short) extends Decoder[FieldHeader] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[FieldHeader] = {
       val availableByteCount = buffer.capacity() - readOffset
       if (availableByteCount >= 1) {
@@ -141,7 +129,7 @@ object CompactProtocol extends Protocol {
 
   // Struct decoder
 
-  class StructDecoder[A](structBuilder: () => StructBuilder) extends Decoder[A] {
+  private class StructDecoder[A](structBuilder: () => StructBuilder) extends Decoder[A] {
 
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
       decodeNextField(buffer, readOffset, 0, structBuilder(), 0)
@@ -156,6 +144,7 @@ object CompactProtocol extends Protocol {
             Decoded(structBuilder.build().asInstanceOf[A], buffer, readOffset)
           } else {
             val fieldTypeId = fieldHeader.fieldTypeId
+            // TODO: replace match with array lookup
             val fieldDecoder = fieldTypeId match {
               case  9 | 10 => new CollectionDecoder(structBuilder.collectionBuilderForField(fieldHeader.fieldId))
 //              case 11 => new MapDecoder(structBuilder.mapBuilderForField(fieldHeader.fieldId))
@@ -167,6 +156,7 @@ object CompactProtocol extends Protocol {
               .andThen { (fieldValue, buffer, readOffset) =>
                 val fieldId = fieldHeader.fieldId
                 val typeId = fieldHeader.fieldTypeId
+                // TODO: replace match with array lookup
                 typeId match {
                   case 1 | 2 => structBuilder.readBoolean(fieldId, fieldValue.asInstanceOf[Boolean])
                   case 3 => structBuilder.readInt8(fieldId, fieldValue.asInstanceOf[Byte])
@@ -210,9 +200,9 @@ object CompactProtocol extends Protocol {
 
   // List and set decoder
 
-  case class ListSetHeader(size: Int, itemTypeId: Int)
+  private case class ListSetHeader(size: Int, itemTypeId: Int)
 
-  object ListSetHeaderDecoder extends Decoder[ListSetHeader] {
+  private object ListSetHeaderDecoder extends Decoder[ListSetHeader] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[ListSetHeader] = {
       val availableByteCount = buffer.capacity() - readOffset
       if (availableByteCount == 0) {
@@ -264,12 +254,13 @@ object CompactProtocol extends Protocol {
     }
   }
 
-  class CollectionDecoder[A](listBuilderF: (Int) => CollectionBuilder) extends Decoder[A] {
+  private class CollectionDecoder[A](listBuilderF: (Int) => CollectionBuilder) extends Decoder[A] {
     override def decode(buffer: DirectBuffer, readOffset: Int): DecodeResult[A] = {
       ListSetHeaderDecoder
         .decode(buffer, readOffset)
         .andThen { (listSetHeader, buffer, readOffset) =>
           val listBuilder = listBuilderF(listSetHeader.size)
+          // TODO: replace match with array lookup:
           val itemDecoder = listSetHeader.itemTypeId match {
             case 9 | 10 => new CollectionDecoder(listBuilder.collectionBuilderForItem())
             // case 11 => new MapDecoder(listBuilder.mapBuilderForItem())

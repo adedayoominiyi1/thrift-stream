@@ -18,8 +18,8 @@ import scala.collection.mutable.ArrayBuffer
 // struct Book {
 //   1: string title,
 //   2: Author author,
-//   4: int32 year,
-//   5: list<int8> pages,
+//   4: i32 year,
+//   5: list<i8> pages,
 //   6: map<string, Book> alternatives,
 // }
 //
@@ -74,7 +74,7 @@ class BookStructBuilder extends StructBuilder {
   override def collectionBuilderForField(fieldId: Short): Int => CollectionBuilder = {
     fieldId match {
       case 5 => size: Int => new ByteSeqBuilder(size)
-      case _ => _ => IgnoreAllCollectionBuilder
+      case _ => CollectionBuilder.IgnoreAllFactory
     }
   }
   override def mapBuilderForField(fieldId: Short): Int => MapBuilder = {
@@ -90,13 +90,13 @@ class BookStructBuilder extends StructBuilder {
 
         override def build() = items.result()
       }
-      case _ => _ => IgnoreAllMapBuilder
+      case _ => MapBuilder.IgnoreAllFactory
     }
   }
   override def structBuilderForField(fieldId: Short): () => StructBuilder = {
     fieldId match {
       case 2 => () => new AuthorStructBuilder()
-      case _ => () => IgnoreAllStructBuilder
+      case _ => StructBuilder.IgnoreAllFactory
     }
   }
   override def readBoolean(fieldId: Short, fieldValue: Boolean): Unit = {}
@@ -139,7 +139,7 @@ class BookStructBuilder extends StructBuilder {
 class ByteSeqBuilder(size: Int) extends CollectionBuilder {
   private[this] val items = new ArrayBuffer[Byte](size)
 
-  override def build(): Seq[Byte] = items.toSeq
+  override def build(): Seq[Byte] = items
 
   override def readItem(value: Any): Unit = {
     items += value.asInstanceOf[Byte]

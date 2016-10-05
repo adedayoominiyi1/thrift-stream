@@ -19,17 +19,13 @@ resolvers ++= Seq(
   "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository"
 )
 
-libraryDependencies <++= (scalaVersion) { sv =>
-  Seq(
-    "uk.co.real-logic" % "Agrona" % "0.4.10",
-    "org.scodec" %% "scodec-bits" % "1.0.12",
-    "org.scalatest" %% "scalatest" % "2.2.6" % "test",
-    "org.scalacheck" %% "scalacheck" % "1.12.5" % "test",
-    // Override version that scalatest depends on:
-    "org.scala-lang" % "scala-reflect" % sv % "test",
-    "org.mockito" % "mockito-all" % "1.10.19" % "test"
-  )
-}
+libraryDependencies ++= Seq(
+  "uk.co.real-logic" % "Agrona" % "0.4.10",
+  "org.scodec" %% "scodec-bits" % "1.0.12",
+  "org.scalatest" %% "scalatest" % "3.0.0" % "test",
+  "org.scalacheck" %% "scalacheck" % "1.13.2" % "test",
+  "org.mockito" % "mockito-all" % "1.10.19" % "test"
+)
 
 javacOptions ++= Seq("-Xmx512m", "-Xms128m", "-Xss10m", "-source", "1.6", "-target", "1.6")
 
