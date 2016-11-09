@@ -2,35 +2,6 @@ package nl.grons.reactivethrift
 
 import java.nio.charset.StandardCharsets
 
-import nl.grons.reactivethrift.decoders.Decoder
-
-// Protocol
-
-trait Protocol {
-  def structDecoder[A](structBuilder: Factory[StructBuilder]): Decoder[A]
-}
-
-object Protocol {
-  case class TMessage(name: String, messageType: Byte, sequenceId: Int)
-}
-
-object MessageType {
-  val STOP: Byte = 0
-  val VOID: Byte = 1
-  val BOOL: Byte = 2
-  val BYTE: Byte = 3
-  val DOUBLE: Byte = 4
-  val I16: Byte = 6
-  val I32: Byte = 8
-  val I64: Byte = 10
-  val STRING: Byte = 11
-  val STRUCT: Byte = 12
-  val MAP: Byte = 13
-  val SET: Byte = 14
-  val LIST: Byte = 15
-  val ENUM: Byte = 16
-}
-
 // Coders
 
 // trait Coder[A] extends Encoder[A] with Decoder[A]

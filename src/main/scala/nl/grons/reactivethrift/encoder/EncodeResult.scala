@@ -1,6 +1,6 @@
 package nl.grons.reactivethrift.encoder
 
-import uk.co.real_logic.agrona.MutableDirectBuffer
+import uk.co.real_logic.agrona.{DirectBuffer, MutableDirectBuffer}
 
 sealed abstract class EncodeResult {
   def andThen(r: (MutableDirectBuffer, Int) => EncodeResult): EncodeResult
@@ -15,6 +15,12 @@ object EncodeResult {
 
   case class EncodeFailure(error: String) extends EncodeResult {
     override def andThen(r: (MutableDirectBuffer, Int) => EncodeResult): EncodeResult = EncodeFailure(error)
+  }
+
+  /** Trampoline continuation. See [[Encoder.trampoliningEncoder]]. */
+  case class ContinueEncode(private val thunk: () => EncodeResult) extends EncodeResult {
+    override def andThen(r: (MutableDirectBuffer, Int) => EncodeResult): EncodeResult =
+      thunk().andThen(r)
   }
 
   trait ContinuationEncoder {

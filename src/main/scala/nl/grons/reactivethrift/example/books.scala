@@ -1,9 +1,8 @@
 package nl.grons.reactivethrift.example
 
-import java.nio.charset.StandardCharsets
-
 import nl.grons.reactivethrift._
 
+import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 // This file contains the code that would be generated from a thrift IDL file.
@@ -16,16 +15,16 @@ import scala.collection.mutable.ArrayBuffer
 // }
 //
 // struct Book {
-//   1: string title,
-//   2: Author author,
-//   4: i32 year,
-//   5: list<i8> pages,
-//   6: map<string, Book> alternatives,
+//   1: string title
+//   2: Author author
+//   4: i32 year
+//   5: list<i8> pages
+//   6: map<string, Book> alternatives
 // }
 //
 // service BookService {
-//   Book bookByTitle(1: string title);
-//   list<Book> booksForAuthor(1: string authorName);
+//   Book bookByTitle(1: string title)
+//   list<Book> booksForAuthor(1: string authorName)
 // }
 
 case class Author(
@@ -56,6 +55,43 @@ class AuthorStructBuilder extends IgnoreAllStructBuilder {
       case _ => ()
     }
   }
+}
+
+trait StructWriter {
+  def fieldsToEncode: Seq[StructField]
+  def writeI8(fieldId: Short): Byte
+  def writeI16(fieldId: Short): Short
+  def writeI32(fieldId: Short): Int
+  def writeI64(fieldId: Short): Long
+  def writeDouble(fieldId: Short): Double
+  def writeBoolean(fieldId: Short): Boolean
+  def writeBinary(fieldId: Short): Array[Byte]
+  def writeStruct(fieldId: Short): StructWriter
+  def writeCollection(fieldId: Short): (ThriftType, Iterator[_])
+  def writeMap(fieldId: Short): (ThriftType, ThriftType, Iterator[(_, _)])
+}
+
+class AuthorStructWriter(author: Author) extends StructWriter {
+  private val nameField = StructField(1, ThriftType.Binary)
+
+  override val fieldsToEncode: Seq[StructField] = {
+    val fields = new mutable.ArrayBuffer[StructField](1)
+    if (author.name != null) fields += nameField
+    fields
+  }
+
+  def writeI8(fieldId: Short): Byte = ???
+  def writeI16(fieldId: Short): Short = ???
+  def writeI32(fieldId: Short): Int = ???
+  def writeI64(fieldId: Short): Long = ???
+  def writeDouble(fieldId: Short): Double = ???
+  def writeBoolean(fieldId: Short): Boolean = ???
+  def writeBinary(fieldId: Short): Array[Byte] = fieldId match {
+    case 1 => StructBuilder.toBinary(author.name)
+  }
+  def writeStruct(fieldId: Short): StructWriter = ???
+  def writeCollection(fieldId: Short): (ThriftType, Iterator[_]) = ???
+  def writeMap(fieldId: Short): (ThriftType, ThriftType, Iterator[(_, _)]) = ???
 }
 
 // --------------- Book ---------------
@@ -144,6 +180,46 @@ class ByteSeqBuilder(size: Int) extends CollectionBuilder {
   override def readItem(value: Any): Unit = {
     items += value.asInstanceOf[Byte]
   }
+}
+
+class BookStructWriter(book: Book) extends StructWriter {
+  private val titleField = StructField(1, ThriftType.Binary)
+  private val authorField = StructField(2, ThriftType.Struct)
+  private val yearField = StructField(4, ThriftType.I32)
+  private val pagesField = StructField(5, ThriftType.List)
+  private val alternativesField = StructField(6, ThriftType.Map)
+
+  override def fieldsToEncode: Seq[StructField] = {
+    val fields = new mutable.ArrayBuffer[StructField](5)
+    if (book.title != null) fields += titleField
+    if (book.author != null) fields += authorField
+    if (book.year != 0) fields += yearField
+    if (book.pages != null) fields += pagesField
+    if (book.alternatives != null) fields += alternativesField
+    fields
+  }
+
+  def writeI8(fieldId: Short): Byte = ???
+  def writeI16(fieldId: Short): Short = ???
+  def writeI32(fieldId: Short): Int = fieldId match {
+    case 4 => book.year
+  }
+  def writeI64(fieldId: Short): Long = ???
+  def writeDouble(fieldId: Short): Double = ???
+  def writeBoolean(fieldId: Short): Boolean = ???
+  def writeBinary(fieldId: Short): Array[Byte] = fieldId match {
+    case 1 => StructBuilder.toBinary(book.title)
+  }
+  def writeStruct(fieldId: Short): StructWriter = fieldId match {
+    case 2 => new AuthorStructWriter(book.author)
+  }
+  def writeCollection(fieldId: Short): (ThriftType, Iterator[_]) = fieldId match {
+    case 5 => (ThriftType.I8, book.pages.iterator)
+  }
+  def writeMap(fieldId: Short): (ThriftType, ThriftType, Iterator[(_, _)]) = fieldId match {
+    case 6 => (ThriftType.Binary, ThriftType.Struct, book.alternatives.iterator)
+  }
+
 }
 
 // --------------- BookService ---------------

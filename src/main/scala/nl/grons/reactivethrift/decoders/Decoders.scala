@@ -66,8 +66,8 @@ object Decoder {
 
   /**
     * A [[Decoder]] that only returns [[Decoded]], [[DecodeFailure]] or [[DecodeInsufficientData]]
-    * (and ''not'' [[Continue]]) results.
-    * It does this by replacing a [[Continue]] with the result of executing its embedded thunk.
+    * (and ''not'' [[ContinueDecode]]) results.
+    * It does this by replacing a [[ContinueDecode]] with the result of executing its embedded thunk.
     *
     * See [[http://blog.richdougherty.com/2009/04/tail-calls-tailrec-and-trampolines.html]] for inspiration.
     *
@@ -79,7 +79,7 @@ object Decoder {
     @tailrec
     def trampoline(decodeResult: DecodeResult[A]): DecodeResult[A] = {
       decodeResult match {
-        case Continue(thunk) => trampoline(thunk())
+        case ContinueDecode(thunk) => trampoline(thunk())
         case result => result
       }
     }

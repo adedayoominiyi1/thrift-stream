@@ -27,7 +27,7 @@ object DecodeResult {
   }
 
   /** Trampoline continuation. See [[Decoder.trampoliningDecoder]]. */
-  case class Continue[A](private val thunk: () => DecodeResult[A]) extends DecodeResult[A] {
+  case class ContinueDecode[A](private val thunk: () => DecodeResult[A]) extends DecodeResult[A] {
     override def andThen[B](r: (A, DirectBuffer, Int) => DecodeResult[B]): DecodeResult[B] =
       thunk().andThen(r)
   }

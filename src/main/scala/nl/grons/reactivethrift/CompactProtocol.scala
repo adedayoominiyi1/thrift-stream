@@ -5,7 +5,12 @@ import java.nio.charset.StandardCharsets
 import nl.grons.reactivethrift.Protocol.TMessage
 import nl.grons.reactivethrift.decoders.DecodeResult._
 import nl.grons.reactivethrift.decoders._
-import uk.co.real_logic.agrona.DirectBuffer
+import nl.grons.reactivethrift.encoder.EncodeResult.{ContinueEncode, Encoded}
+import nl.grons.reactivethrift.encoder._
+import nl.grons.reactivethrift.example.StructWriter
+import uk.co.real_logic.agrona.{DirectBuffer, MutableDirectBuffer}
+
+import scala.annotation.switch
 
 object CompactProtocol extends Protocol {
 
@@ -18,9 +23,8 @@ object CompactProtocol extends Protocol {
 
   private val EmptyByteArray: Array[Byte] = Array.empty
 
-  private val BooleanTrueDecoder: Decoder[Boolean] = Decoder.unit(true)
-
-  private val BooleanFalseDecoder: Decoder[Boolean] = Decoder.unit(false)
+  private val BooleanFieldTrueDecoder: Decoder[Boolean] = Decoder.unit(true)
+  private val BooleanFieldFalseDecoder: Decoder[Boolean] = Decoder.unit(false)
 
   //
   // Protocol:
@@ -39,8 +43,27 @@ object CompactProtocol extends Protocol {
       }
     }
 
+  private val BinaryEncoder: Encoder[Array[Byte]] = new Encoder[Array[Byte]] {
+    override def encode(value: Array[Byte], buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+      //noinspection VariablePatternShadow
+      VarInt32Encoder
+        .encode(value.length, buffer, writeOffset)
+        .andThen { case (buffer, writeOffset) =>
+          if (value.length == 0) {
+            Encoded(buffer, writeOffset)
+          } else {
+            BytesEncoder
+              .encode(value, buffer, writeOffset)
+          }
+        }
+    }
+  }
+
   private val StringDecoder: Decoder[String] =
     BinaryDecoder.map(binary => new String(binary, StandardCharsets.UTF_8))
+
+  private val StringEncoder: Encoder[String] =
+    BinaryEncoder.map(_.getBytes(StandardCharsets.UTF_8))
 
   /**
     * TMessage decoder.
@@ -52,7 +75,7 @@ object CompactProtocol extends Protocol {
     * * var int32: length of message name
     * * bytes: message name
     */
-  private val MessageDecoder: Decoder[TMessage] =
+  private val TMessageDecoder: Decoder[TMessage] =
     Decoder
       .product4(Int8Decoder, Int8Decoder, VarInt32Decoder, StringDecoder)
       .decodeAndThen { case ((protocolId, versionInfo, sequenceId, name), buffer, readOffset) =>
@@ -65,6 +88,14 @@ object CompactProtocol extends Protocol {
         } else {
           Decoded(TMessage(name, messageType, sequenceId), buffer, readOffset)
         }
+      }
+
+  private val TMessageEncoder: Encoder[TMessage] =
+    Encoder
+      .product4(Int8Encoder, Int8Encoder, VarInt32Encoder, StringEncoder)
+      .map { message =>
+        val typeAndVersion = ((message.messageType << 5).toByte | CompactProtocolVersion).toByte
+        (CompactProtocolId, typeAndVersion, message.sequenceId, message.name)
       }
 
   // Field header decoder
@@ -111,10 +142,9 @@ object CompactProtocol extends Protocol {
             // t = field type id (4 bits), always >0
             // i = field id (signed 16 bits, encoded as zigzag int)
             //
-            // TODO: make more efficient by directly reading the field id from buffer (when capacity allows it)
             //noinspection VariablePatternShadow
             ZigZagInt16Decoder
-              .decode(buffer, readOffset + 1)
+              .decode(buffer, readOffset + 1)  // Note the `+1`.
               .andThen { case (fieldId, buffer, readOffset) =>
                 Decoded(FieldHeader(fieldId, fieldTypeId), buffer, readOffset)
               }
@@ -123,6 +153,31 @@ object CompactProtocol extends Protocol {
       } else {
         // no data available at all
         DecodeInsufficientData(this)
+      }
+    }
+  }
+
+  private val FieldHeaderExtendedFormEncoder = Encoder.product(Int8Encoder, VarInt32Encoder)
+
+  private def encodeStopFieldHeader(buffer: MutableDirectBuffer, writeOffset: Int) = Int8Encoder.encode(0, buffer, writeOffset)
+
+  private class FieldHeaderEncoder(previousFieldId: Short) extends Encoder[FieldHeader] {
+    override def encode(value: FieldHeader, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+      if (value.isStopField) {
+        // stop field
+        encodeStopFieldHeader(buffer, writeOffset)
+
+      } else {
+        val fieldIdDelta = value.fieldId - previousFieldId
+        if (fieldIdDelta >= 1 && fieldIdDelta <= 15) {
+          // short form
+          val deltaAndType = (fieldIdDelta << 4 | value.fieldTypeId).toByte
+          Int8Encoder.encode(deltaAndType, buffer, writeOffset)
+
+        } else {
+          // extended form
+          FieldHeaderExtendedFormEncoder.encode((value.fieldTypeId.toByte, value.fieldId.toInt), buffer, writeOffset)
+        }
       }
     }
   }
@@ -144,8 +199,7 @@ object CompactProtocol extends Protocol {
             Decoded(structBuilder.build().asInstanceOf[A], buffer, readOffset)
           } else {
             val fieldTypeId = fieldHeader.fieldTypeId
-            // TODO: replace match with array lookup
-            val fieldDecoder = fieldTypeId match {
+            val fieldDecoder = (fieldTypeId: @switch) match {
               case  9 | 10 => new CollectionDecoder(structBuilder.collectionBuilderForField(fieldHeader.fieldId))
 //              case 11 => new MapDecoder(structBuilder.mapBuilderForField(fieldHeader.fieldId))
               case 12 => new StructDecoder(structBuilder.structBuilderForField(fieldHeader.fieldId))
@@ -156,8 +210,7 @@ object CompactProtocol extends Protocol {
               .andThen { (fieldValue, buffer, readOffset) =>
                 val fieldId = fieldHeader.fieldId
                 val typeId = fieldHeader.fieldTypeId
-                // TODO: replace match with array lookup
-                typeId match {
+                (typeId: @switch) match {
                   case 1 | 2 => structBuilder.readBoolean(fieldId, fieldValue.asInstanceOf[Boolean])
                   case 3 => structBuilder.readInt8(fieldId, fieldValue.asInstanceOf[Byte])
                   case 4 => structBuilder.readInt16(fieldId, fieldValue.asInstanceOf[Short])
@@ -174,7 +227,7 @@ object CompactProtocol extends Protocol {
                 if (stackDepth < 100) {
                   this.decodeNextField(buffer, readOffset, stackDepth + 1, structBuilder, fieldHeader.fieldId)
                 } else {
-                  Continue(() => this.decodeNextField(buffer, readOffset, 0, structBuilder, fieldHeader.fieldId))
+                  ContinueDecode(() => this.decodeNextField(buffer, readOffset, 0, structBuilder, fieldHeader.fieldId))
                 }
               }
           }
@@ -184,8 +237,8 @@ object CompactProtocol extends Protocol {
 
   private val PrimitiveDecodersByTypeId: Array[Decoder[_]] = Array(
     null,
-    /* 0x1 */ BooleanTrueDecoder,
-    /* 0x2 */ BooleanFalseDecoder,
+    /* 0x1 */ BooleanFieldTrueDecoder,
+    /* 0x2 */ BooleanFieldFalseDecoder,
     /* 0x3 */ Int8Decoder,
     /* 0x4 */ ZigZagInt16Decoder,
     /* 0x5 */ ZigZagInt32Decoder,
@@ -197,6 +250,84 @@ object CompactProtocol extends Protocol {
     // 0xB: MapDecoder
     // 0xC: StructDecoder
   )
+
+  private object StructEncoder extends Encoder[StructWriter] {
+
+    override def encode(value: StructWriter, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+      encodeNextField(value.fieldsToEncode, value, buffer, writeOffset, 0, 0)
+    }
+
+    private def encodeNextField(fieldsToEncode: Seq[StructField], structEncode: StructWriter, buffer: MutableDirectBuffer, writeOffset: Int, stackDepth: Int, previousFieldId: Short): EncodeResult = {
+      if (fieldsToEncode.isEmpty) {
+        // Done
+        encodeStopFieldHeader(buffer, writeOffset)
+
+      } else {
+        val field = fieldsToEncode.head
+        val fieldTypeId = fieldTypeIdFor(structEncode, field)
+        val fieldId = field.fieldId
+
+        new FieldHeaderEncoder(previousFieldId)
+          .encode(FieldHeader(fieldId, fieldTypeId), buffer, writeOffset)
+          .andThen { (buffer, writeOffset) =>
+
+            val fieldEncodeResult: EncodeResult = (fieldTypeId: @switch) match {
+              case 1 | 2 => /* value is already encoded in field header */ Encoded(buffer, writeOffset)
+              case 3 => Int8Encoder.encode(structEncode.writeI8(fieldId), buffer, writeOffset)
+              case 4 => Int16Encoder.encode(structEncode.writeI16(fieldId), buffer, writeOffset)
+              case 5 => Int32Encoder.encode(structEncode.writeI32(fieldId), buffer, writeOffset)
+              case 6 => Int64Encoder.encode(structEncode.writeI64(fieldId), buffer, writeOffset)
+              case 7 => DoubleEncoder.encode(structEncode.writeDouble(fieldId), buffer, writeOffset)
+              case 8 => BinaryEncoder.encode(structEncode.writeBinary(fieldId), buffer, writeOffset)
+              // case 9 | 10 => CollectionEncoder.encode(structEncode.writeCollection(fieldId), buffer, writeOffset)
+              // case 11 => structBuilder.readMap(fieldId, fieldValue)
+              case 12 => StructEncoder.encode(structEncode.writeStruct(fieldId), buffer, writeOffset)
+            }
+
+            fieldEncodeResult.andThen { (buffer, writeOffset) =>
+              // Initiate a bounce on the trampoline when we used up the stack-frame budget
+              val theRest = fieldsToEncode.tail
+              if (stackDepth < 100) {
+                this.encodeNextField(theRest, structEncode, buffer, writeOffset, stackDepth + 1, fieldId)
+              } else {
+                ContinueEncode(() => this.encodeNextField(theRest, structEncode, buffer, writeOffset, 0, fieldId))
+              }
+            }
+          }
+      }
+    }
+
+    private def fieldTypeIdFor(structEncode: StructWriter, structField: StructField): Short = structField.thriftType match {
+      case ThriftType.Bool => if (structEncode.writeBoolean(structField.fieldId)) 1 else 2
+      case ThriftType.I8 => 3
+      case ThriftType.I16 => 4
+      case ThriftType.I32 => 5
+      case ThriftType.I64 => 6
+      case ThriftType.Double => 7
+      case ThriftType.Binary => 8
+      case ThriftType.List => 9
+      case ThriftType.Set => 10
+      case ThriftType.Map => 11
+      case ThriftType.Struct => 12
+    }
+  }
+
+//  private val PrimitiveEncodersByTypeId: Array[Encoder[_]] = Array(
+//    null,
+//    /* 0x1 */ BooleanFieldTrueEncoder,
+//    /* 0x2 */ BooleanFieldFalseEncoder,
+//    /* 0x3 */ Int8Encoder,
+//    /* 0x4 */ ZigZagInt16Encoder,
+//    /* 0x5 */ ZigZagInt32Encoder,
+//    /* 0x6 */ ZigZagInt64Encoder,
+//    /* 0x7 */ DoubleEncoder,
+//    /* 0x8 */ BinaryEncoder
+//    // 0x9: ListEncoder,
+//    // 0xA: SetEncoder,
+//    // 0xB: MapEncoder
+//    // 0xC: StructEncoder
+//  )
+
 
   // List and set decoder
 
@@ -285,12 +416,18 @@ object CompactProtocol extends Protocol {
             if (stackDepth < 50) {
               this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder)
             } else {
-              Continue(() => this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder))
+              ContinueDecode(() => this.decodeNextItem(buffer, readOffset, stackDepth + 1, listBuilder, itemsLeftToRead - 1, itemDecoder))
             }
           }
       }
     }
   }
+
+//  private class CollectionEncoder[A] extends Encoder[A] {
+//    override def encode(value: A, buffer: MutableDirectBuffer, writeOffset: Int): EncodeResult = {
+//
+//    }
+//  }
 
   // TODO: MapDecoder
 
