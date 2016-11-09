@@ -1,5 +1,7 @@
 package nl.grons.reactivethrift
 
+import java.nio.charset.StandardCharsets
+
 import nl.grons.reactivethrift.decoders.Decoder
 
 // Protocol
@@ -70,6 +72,10 @@ object StructBuilder {
     val ignoreAllStructBuilder = new IgnoreAllStructBuilder {}
     () => ignoreAllStructBuilder
   }
+
+  // TODO: move somewere else, to the protocol?
+  def toString(binary: Array[Byte]): String = new String(binary, StandardCharsets.UTF_8)
+  def toBinary(string: String): Array[Byte] = string.getBytes(StandardCharsets.UTF_8)
 }
 
 class IgnoreAllStructBuilder extends StructBuilder {

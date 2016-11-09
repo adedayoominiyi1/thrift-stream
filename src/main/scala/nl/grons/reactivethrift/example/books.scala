@@ -52,7 +52,7 @@ class AuthorStructBuilder extends IgnoreAllStructBuilder {
 
   override def readBinary(fieldId: Short, fieldValue: Array[Byte]): Unit = {
     fieldId match {
-      case 1 => this.name = new String(fieldValue, StandardCharsets.UTF_8)
+      case 1 => this.name = StructBuilder.toString(fieldValue)
       case _ => ()
     }
   }
@@ -85,7 +85,7 @@ class BookStructBuilder extends StructBuilder {
         override def structBuilderForValue(): () => StructBuilder = () => new BookStructBuilder()
 
         override def readItem(key: Any, value: Any): Unit = {
-          items.+=((new String(key.asInstanceOf[Array[Byte]], StandardCharsets.UTF_8), value.asInstanceOf[Book]))
+          items.+=((StructBuilder.toString(key.asInstanceOf[Array[Byte]]), value.asInstanceOf[Book]))
         }
 
         override def build() = items.result()
@@ -112,7 +112,7 @@ class BookStructBuilder extends StructBuilder {
   override def readDouble(fieldId: Short, fieldValue: Double): Unit = {}
   override def readBinary(fieldId: Short, fieldValue: Array[Byte]): Unit = {
     fieldId match {
-      case 1 => this.title = new String(fieldValue, StandardCharsets.UTF_8)
+      case 1 => this.title = StructBuilder.toString(fieldValue)
       case _ => ()
     }
   }
@@ -178,7 +178,7 @@ object BookService {
 
       override def readBinary(fieldId: Short, fieldValue: Array[Byte]): Unit = {
         fieldId match {
-          case 1 => this.authorName = new String(fieldValue, StandardCharsets.UTF_8)
+          case 1 => this.authorName = StructBuilder.toString(fieldValue)
           case _ => ()
         }
       }
