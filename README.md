@@ -14,7 +14,7 @@ For this we desire:
 * construction of any entity (e.g. Java POJO's, Scala case classes)
 * works equally well for framed as non-framed transport
 
-These goals are conflicting when a traditional API is used. This library uses the novel idea of *continuation parsers*.
+These goals are conflicting when a traditional API is used. This library uses the novel idea of **continuation parsers**.
 
 Decoding a network buffer is done by a parser. Offering a network buffer to such a parser either gives a decoded entity or a _continuation parser_ (or a protocol error). The continuation parser contains a partially constructed entity and needs more network buffers to complete decoding.
 
@@ -26,7 +26,13 @@ With this in place it becomes possible to convert a stream of network buffers in
 * entities are created by builders, these builders need to be generated, there is no code generation
 * decoding and encoding of all primitive types for the Thrift Compact Protocol and Thrift Binary Protocol
 
-### Challenges
+### About continuation parsers
+
+A continuation parser works by building up state (in the entity builder) while recusing into the fields that need to be decoded. At each step it validates if enough bytes are available in the input buffer. In case not enough bytes are available, a new parser is contructed that references the entity builder and potentially some partially read data (for example the first 2 bytes of a 4 byte integer).
+
+By using functional programming (parsers are monads) it is possible combine parsers (parsers use other parsers) without too much programming overhead. See https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/decoders/Decoders.scala for the Decoder trait, see for example https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/CompactProtocol.scala#L34 to see how to combine parsers.
+
+### Future work
 
 To make this a fully functional thrift implementation the following needs to be done:
 
