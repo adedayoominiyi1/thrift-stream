@@ -16,7 +16,7 @@ For this we desire:
 
 These goals are conflicting when a traditional API is used. This library uses the novel idea of **continuation parsers**.
 
-Decoding a network buffer is done by a parser. Offering a network buffer to such a parser either gives a decoded entity or a _continuation parser_ (or a protocol error). The continuation parser contains a partially constructed entity and needs more network buffers to complete decoding.
+Decoding a network buffer is done by a parser. Offering a network buffer to such a parser either gives a decoded entity or a _continuation parser_ (or a protocol error). The continuation parser contains a partially constructed entity, and can be given more network buffers to complete decoding.
 
 With this in place it becomes possible to convert a stream of network buffers into a stream of decoded entities, and a stream of entities into a stream of network buffers.
 
@@ -28,9 +28,13 @@ With this in place it becomes possible to convert a stream of network buffers in
 
 ### About continuation parsers
 
-A continuation parser works by building up state (in the entity builder) while recusing into the fields that need to be decoded. At each step it validates if enough bytes are available in the input buffer. In case not enough bytes are available, a new parser is contructed that references the entity builder and potentially some partially read data (for example the first 2 bytes of a 4 byte integer).
+A continuation parser works by building up state (in the entity builder) while recursing into the fields that need to be decoded. At each step it validates if enough bytes are available in the input buffer. In case not enough bytes are available, a new parser is contructed that references the entity builder and potentially some partially read data (for example the first 2 bytes of a 4 byte integer).
 
-By using functional programming (parsers are monads) it is possible combine parsers (parsers use other parsers) without too much programming overhead. See https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/decoders/Decoders.scala for the Decoder trait, see for example https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/CompactProtocol.scala#L34 to see how to combine parsers.
+By using functional programming (parsers are monads) it is possible combine parsers (parsers use other parsers) without too much programming overhead. See for example https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/CompactProtocol.scala#L34 to see how a parser that decodes a var-int is combined with a byte array decoder.
+
+Because recursion is essential, trampolining is used to prevent StackOverflowExceptions.
+
+Although Scala is used here, this code can be translated into any programming language that supports closures (so that includes Java 8).
 
 ### Future work
 
