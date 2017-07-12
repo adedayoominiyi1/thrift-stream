@@ -7,7 +7,9 @@ A proof-of-concept streaming implementation of the thrift protocol.
 
 ### Goals
 
-The idea is that we can use thrift-stream in high performance async environments like [Finagle](https://twitter.github.io/finagle/) or [Akka Streams](https://akka.io/docs).
+The idea is that we can use thrift-stream in high performance async environments like
+[Finagle](https://twitter.github.io/finagle/), [Akka Streams](https://akka.io/docs) and
+[Aeron](https://github.com/real-logic/aeron).
 
 Requirements:
 
@@ -70,8 +72,9 @@ and a stream of entities into a stream of network buffers.
 ### Status
 
 * fully working decoding of Thrift Compact Protocol
-* entities are created by builders, these builders need to be generated, there is no code generation
-* decoding and encoding of message frames and all primitive types for the Thrift Compact Protocol and
+* entities are created by builders; these builders need to be generated from a thrift definitions, no code generation
+  is in place
+* decoding and encoding of Thrift message frames and all primitive types for the Thrift Compact Protocol and
   Thrift Binary Protocol
 
 ### About continuation parsers / encoders
