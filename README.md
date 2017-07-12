@@ -5,6 +5,11 @@ A proof-of-concept streaming implementation of the thrift protocol.
 
 — An exploration of **continuation parsers and encoders** —
 
+### TL DR
+
+Continuation parsers and encoders try to decode/encode data directly from/to a network buffer. When the buffer
+has been fully read/written, it asks for more network buffers to continue.
+
 ### Goals
 
 The idea is that we can use thrift-stream in high performance async environments like
