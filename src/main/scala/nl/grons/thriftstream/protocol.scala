@@ -1,6 +1,6 @@
-package nl.grons.reactivethrift
+package nl.grons.thriftstream
 
-import nl.grons.reactivethrift.decoders.Decoder
+import nl.grons.thriftstream.decoders.Decoder
 
 // Protocol
 

@@ -1,6 +1,6 @@
-package nl.grons.reactivethrift.example
+package nl.grons.thriftstream.example
 
-import nl.grons.reactivethrift._
+import nl.grons.thriftstream._
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer

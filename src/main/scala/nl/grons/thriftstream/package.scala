@@ -1,6 +1,6 @@
 package nl.grons
 
-package object reactivethrift {
+package object thriftstream {
 
   type Factory[A] = () => A
 

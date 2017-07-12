@@ -1,8 +1,8 @@
-package nl.grons.reactivethrift
+package nl.grons.thriftstream
 
-import nl.grons.reactivethrift.decoders.DecodeResult.Decoded
-import nl.grons.reactivethrift.decoders.Decoder
-import nl.grons.reactivethrift.example.{Book, BookStructBuilder}
+import nl.grons.thriftstream.decoders.DecodeResult.Decoded
+import nl.grons.thriftstream.decoders.Decoder
+import nl.grons.thriftstream.example.{Book, BookStructBuilder}
 import org.scalatest.FunSpec
 import org.scalatest.Matchers._
 import uk.co.real_logic.agrona.concurrent.UnsafeBuffer

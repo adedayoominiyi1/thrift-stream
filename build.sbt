@@ -1,7 +1,7 @@
 
 organization := "nl.grons"
 
-name := "reactive-thrift"
+name := "thrift-stream"
 
 version := "0.0.0"
 

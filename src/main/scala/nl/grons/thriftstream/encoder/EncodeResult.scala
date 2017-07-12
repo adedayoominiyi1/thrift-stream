@@ -1,4 +1,4 @@
-package nl.grons.reactivethrift.encoder
+package nl.grons.thriftstream.encoder
 
 import uk.co.real_logic.agrona.{DirectBuffer, MutableDirectBuffer}
 

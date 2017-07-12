@@ -1,9 +1,9 @@
-package nl.grons.reactivethrift.coder
+package nl.grons.thriftstream.coder
 
-import nl.grons.reactivethrift.decoders.DecodeResult.{DecodeFailure, DecodeInsufficientData, Decoded}
-import nl.grons.reactivethrift.decoders.{DecodeResult, Decoder}
-import nl.grons.reactivethrift.encoder.EncodeResult.{ContinuationEncoder, EncodeFailure, EncodeInsufficientBuffer, Encoded}
-import nl.grons.reactivethrift.encoder.Encoder
+import nl.grons.thriftstream.decoders.DecodeResult.{DecodeFailure, DecodeInsufficientData, Decoded}
+import nl.grons.thriftstream.decoders.{DecodeResult, Decoder}
+import nl.grons.thriftstream.encoder.EncodeResult.{ContinuationEncoder, EncodeFailure, EncodeInsufficientBuffer, Encoded}
+import nl.grons.thriftstream.encoder.Encoder
 import org.scalacheck.Gen
 import org.scalatest.Matchers._
 import org.scalatest.prop.PropertyChecks

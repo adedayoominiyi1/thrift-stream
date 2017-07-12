@@ -1,4 +1,4 @@
-package nl.grons.reactivethrift
+package nl.grons.thriftstream
 
 import java.nio.charset.StandardCharsets
 

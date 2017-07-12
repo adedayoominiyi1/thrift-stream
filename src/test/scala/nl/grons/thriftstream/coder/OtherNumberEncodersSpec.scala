@@ -1,9 +1,9 @@
-package nl.grons.reactivethrift.coder
+package nl.grons.thriftstream.coder
 
-import nl.grons.reactivethrift.decoders.DecodeResult._
-import nl.grons.reactivethrift.decoders._
-import nl.grons.reactivethrift.encoder.EncodeResult._
-import nl.grons.reactivethrift.encoder._
+import nl.grons.thriftstream.decoders.DecodeResult._
+import nl.grons.thriftstream.decoders._
+import nl.grons.thriftstream.encoder.EncodeResult._
+import nl.grons.thriftstream.encoder._
 import org.scalacheck.Gen
 import org.scalatest.FunSpec
 import org.scalatest.Matchers._

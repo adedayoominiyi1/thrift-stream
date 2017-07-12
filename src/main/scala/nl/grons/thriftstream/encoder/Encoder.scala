@@ -1,6 +1,6 @@
-package nl.grons.reactivethrift.encoder
+package nl.grons.thriftstream.encoder
 
-import nl.grons.reactivethrift.encoder.EncodeResult.Encoded
+import nl.grons.thriftstream.encoder.EncodeResult.Encoded
 import uk.co.real_logic.agrona.MutableDirectBuffer
 
 trait Encoder[A] { self =>

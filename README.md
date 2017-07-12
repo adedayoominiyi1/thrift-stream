@@ -92,7 +92,7 @@ progress very fast.
 
 By using functional programming (parsers are monads) it is possible combine parsers (parsers use other parsers) without
 too much programming overhead. See for example
-https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/reactivethrift/CompactProtocol.scala#L34
+https://github.com/erikvanoosten/thrift-stream/blob/master/src/main/scala/nl/grons/thriftstream/CompactProtocol.scala#L34
 to see how a parser that decodes a var-int is combined with a byte array decoder.
 
 Because recursion is essential, trampolining is used to prevent StackOverflowExceptions.

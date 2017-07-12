@@ -1,13 +1,13 @@
-package nl.grons.reactivethrift
+package nl.grons.thriftstream
 
 import java.nio.charset.StandardCharsets
 
-import nl.grons.reactivethrift.Protocol.TMessage
-import nl.grons.reactivethrift.decoders.DecodeResult._
-import nl.grons.reactivethrift.decoders._
-import nl.grons.reactivethrift.encoder.EncodeResult.{ContinueEncode, Encoded}
-import nl.grons.reactivethrift.encoder._
-import nl.grons.reactivethrift.example.StructWriter
+import nl.grons.thriftstream.Protocol.TMessage
+import nl.grons.thriftstream.decoders.DecodeResult._
+import nl.grons.thriftstream.decoders._
+import nl.grons.thriftstream.encoder.EncodeResult.{ContinueEncode, Encoded}
+import nl.grons.thriftstream.encoder._
+import nl.grons.thriftstream.example.StructWriter
 import uk.co.real_logic.agrona.{DirectBuffer, MutableDirectBuffer}
 
 import scala.annotation.switch

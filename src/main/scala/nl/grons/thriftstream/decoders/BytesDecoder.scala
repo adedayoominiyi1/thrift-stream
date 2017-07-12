@@ -1,8 +1,8 @@
-package nl.grons.reactivethrift.decoders
+package nl.grons.thriftstream.decoders
 
-import nl.grons.reactivethrift.decoders.DecodeResult._
+import nl.grons.thriftstream.decoders.DecodeResult._
 import uk.co.real_logic.agrona.DirectBuffer
-import nl.grons.reactivethrift.decoders.BytesDecoder._
+import nl.grons.thriftstream.decoders.BytesDecoder._
 
 /**
   * Bytes encoder.
