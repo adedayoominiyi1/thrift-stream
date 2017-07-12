@@ -119,6 +119,6 @@ http://erikvanoosten.github.io/thrift-missing-specification
 
 Copyright (C) 2016 - 2017 Erik van Oosten
 
-This README is is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
+This README is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by/4.0/">Creative Commons Attribution 4.0 International License</a>.
 
 This entire project is published under Apache Software License 2.0, see [LICENSE](LICENSE)
