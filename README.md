@@ -31,7 +31,7 @@ sealed abstract class DecodeResult[A]
 object DecodeResult {
   case class Decoded[A](value: A, buffer: NetworkBuffer, nextReadOffset: Int) extends DecodeResult[A]
   case class DecodeFailure[A](error: String) extends DecodeResult[A]
-  case class DecodeInsufficientData[A](continuationDecoder: Decoder[A])
+  case class DecodeInsufficientData[A](continuationDecoder: Decoder[A]) extends DecodeResult[A]
 }
 
 trait Decoder[A] {
