@@ -7,8 +7,8 @@ A proof-of-concept streaming implementation of the thrift protocol.
 
 ### TL DR
 
-Continuation parsers and encoders try to decode/encode data directly from/to a network buffer. When the buffer
-has been fully read/written, it asks for more network buffers to continue.
+Continuation parsers and encoders try to decode (read)/encode (write) data _directly_ from/to a network buffer. When
+the buffer has been fully read/written, it asks for more network buffers to continue.
 
 ### Goals
 
